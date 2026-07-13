@@ -9,6 +9,7 @@
 
 ## Last 10 Changes
 
+- 2026-07-13: Downloaded and materialized 295 mychen76 invoice/receipt records for Demo 2 stress testing (100 train, 125 test, 70 valid), then loaded them idempotently into `arcillis.demo2_invoice` under the `mychen76` dataset source. The 259 MB local dataset is gitignored; 174 records use the Donut-compatible `header`/`items`/`summary` form, while 120 receipt records are flat and one valid record is wrapped under `None`.
 - 2026-07-12: Downloaded and materialized the Donut invoice evaluation dataset locally; documented its ground-truth schema and Git-ignore policy.
 - 2026-07-12: Bootstrapped the repository with demo and shared-component placeholders.
 
