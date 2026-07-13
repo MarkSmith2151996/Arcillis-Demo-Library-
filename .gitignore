@@ -1,3 +1,11 @@
 # Downloaded Hugging Face dataset and derived evaluation files.
 demo-2-pdf-extractor/datasets/donut-invoices/
+demo-2-pdf-extractor/datasets/midd-invoices/
 demo-2-pdf-extractor/datasets/mychen76-invoices/
+
+# Local Python environments and bytecode.
+.env
+.venv/
+__pycache__/
+*.py[cod]
+demo-2-pdf-extractor/extraction_workbook.html
