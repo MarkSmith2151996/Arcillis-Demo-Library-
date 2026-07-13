@@ -1,0 +1,5 @@
+{
+  "output_dir": "output",
+  "database_url": "postgresql://autocore_writer:autocore_pipeline_2026@localhost:5432/hive",
+  "google_service_account_credentials": ""
+}

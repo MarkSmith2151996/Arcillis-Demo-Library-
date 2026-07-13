@@ -1,0 +1,4 @@
+mcp
+openpyxl
+gspread
+psycopg2-binary
