@@ -2,11 +2,9 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-
-from PIL import Image, ImageQt
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QUrl
 from PySide6.QtGui import QAction, QPixmap
+from PySide6.QtNetwork import QNetworkAccessManager, QNetworkReply, QNetworkRequest
 from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
@@ -15,6 +13,18 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
+
+from db import FILE_SERVER_URL
+
+
+LOCAL_UPLOAD_PREFIX = "mac-local://"
+
+
+def image_path_to_url(image_path: str) -> str:
+    """Map a database WSL path onto the PC's HTTP file server."""
+    base = "/home/dev/projects/Arcillis-Demo-Library/"
+    relative = image_path[len(base) :] if image_path.startswith(base) else image_path
+    return f"{FILE_SERVER_URL}/{relative}"
 
 
 class DocumentViewerWidget(QWidget):
@@ -32,6 +42,8 @@ class DocumentViewerWidget(QWidget):
         self.scroll_area.setWidgetResizable(False)
         self._original = QPixmap()
         self._zoom = 1.0
+        self._network = QNetworkAccessManager(self)
+        self._image_reply: QNetworkReply | None = None
 
         toolbar = QToolBar()
         fit_action = QAction("Fit width", self, triggered=self.fit_to_width)
@@ -47,13 +59,19 @@ class DocumentViewerWidget(QWidget):
         layout.addWidget(self.scroll_area)
 
     def show_document(self, image_path: str, filename: str) -> None:
-        """Load a selected document and fit it into the current viewer width."""
+        """Load a selected document over HTTP and fit it into the viewer width."""
         self.filename.setText(filename)
-        self._original = self._load_pixmap(Path(image_path))
-        if self._original.isNull():
-            self.image_label.setText(f"Cannot load {filename}")
+        self._original = QPixmap()
+        if self._image_reply:
+            self._image_reply.abort()
+            self._image_reply.deleteLater()
+        if image_path.startswith(LOCAL_UPLOAD_PREFIX):
+            self.image_label.setText("This Mac-only upload is not available from the file server")
             return
-        self.fit_to_width()
+        self.image_label.setText("Loading document...")
+        reply = self._network.get(QNetworkRequest(QUrl(image_path_to_url(image_path))))
+        self._image_reply = reply
+        reply.finished.connect(lambda: self._document_loaded(reply, filename))
 
     def fit_to_width(self) -> None:
         """Scale the displayed document to the available content width."""
@@ -84,13 +102,19 @@ class DocumentViewerWidget(QWidget):
         )
         self.image_label.resize(self.image_label.pixmap().size())
 
-    @staticmethod
-    def _load_pixmap(image_path: Path) -> QPixmap:
-        pixmap = QPixmap(str(image_path))
-        if not pixmap.isNull():
-            return pixmap
-        try:
-            with Image.open(image_path) as image:
-                return QPixmap.fromImage(ImageQt.ImageQt(image.convert("RGBA")))
-        except (OSError, ValueError):
-            return QPixmap()
+    def _document_loaded(self, reply: QNetworkReply, filename: str) -> None:
+        if reply is not self._image_reply:
+            reply.deleteLater()
+            return
+        self._image_reply = None
+        if reply.error() != QNetworkReply.NetworkError.NoError:
+            self.image_label.setText(f"Cannot load {filename}")
+            reply.deleteLater()
+            return
+        self._original = QPixmap()
+        if not self._original.loadFromData(reply.readAll()):
+            self.image_label.setText(f"Cannot load {filename}")
+            reply.deleteLater()
+            return
+        reply.deleteLater()
+        self.fit_to_width()

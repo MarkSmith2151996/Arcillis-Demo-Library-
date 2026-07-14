@@ -9,16 +9,18 @@
 
 ## Architecture
 
-- `demo-bench/`: A standalone PySide6 desktop shell for client-facing Arcillis demos. The first plugin supplies dockable document intake, source browsing, viewing, and batch-status widgets for Demo 2.
+- `demo-bench/`: A standalone PySide6 desktop shell for client-facing Arcillis demos. A landing dialog selects a demo before its plugin supplies dockable document intake, source browsing, viewing, and batch-status widgets for Demo 2.
 
 ## File Map
 
-- `demo-bench/main.py`: Application shell, demo selector, dock-layout reset, dark palette, and connection status indicator.
+- `demo-bench/main.py`: Application shell, landing dialog launch, dock-layout reset, dark palette, and connection status indicator.
+- `demo-bench/widgets/demo_selector_window.py`: Dark landing dialog and clickable Document Extractor demo card.
 - `demo-bench/plugins/document_extractor.py`: Registers and lays out the four Document Extractor docks.
 - `demo-bench/widgets/`: Intake, lazy thumbnail browser, document viewer, and batch-status components.
 
 ## Last 10 Changes
 
+- 2026-07-13: Updated Demo Bench to fetch WSL-hosted source images asynchronously through the PC file server, mark Mac-only intake uploads as intentionally remote-unavailable, and open with a dark Document Extractor landing dialog instead of a selector sidebar.
 - 2026-07-13: Added the dockable PySide6 Demo Bench shell for the Document Extractor demo. It includes a plugin registry, Postgres connection indicator, dark palette, local PDF/image intake, lazy filtered database thumbnail browser, zoomable viewer, and batch-status placeholder.
 - 2026-07-13: Added Demo 2's standalone output MCP server. Its Excel, CSV, and Google Sheets tools fetch a run or accept raw extraction JSON, emit an identical flattened table structure, format local workbooks, and clearly skip Sheets when no service account is configured.
 - 2026-07-13: Completed direct agent-vision extraction for all 125 mychen76 test receipts under `mychen76-test-run`; schema-agnostic grading averaged 79.10%, with a 0.00% to 100.00% range and no unreadable-image error records.

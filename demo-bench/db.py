@@ -6,6 +6,7 @@ import psycopg2
 
 
 DB_URL = "postgresql://autocore_writer:autocore_pipeline_2026@100.95.20.98:5432/hive"
+FILE_SERVER_URL = "http://100.95.20.98:9999"
 
 
 def get_connection():

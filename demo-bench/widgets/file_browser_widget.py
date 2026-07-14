@@ -3,11 +3,9 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from pathlib import Path
-
-from PIL import Image, ImageQt
-from PySide6.QtCore import QEvent, Qt, Signal
+from PySide6.QtCore import QEvent, Qt, QUrl, Signal
 from PySide6.QtGui import QMouseEvent, QPixmap
+from PySide6.QtNetwork import QNetworkAccessManager, QNetworkReply, QNetworkRequest
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -21,10 +19,18 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from db import get_connection
+from db import FILE_SERVER_URL, get_connection
 
 
 BATCH_SIZE = 50
+LOCAL_UPLOAD_PREFIX = "mac-local://"
+
+
+def image_path_to_url(image_path: str) -> str:
+    """Map a database WSL path onto the PC's HTTP file server."""
+    base = "/home/dev/projects/Arcillis-Demo-Library/"
+    relative = image_path[len(base) :] if image_path.startswith(base) else image_path
+    return f"{FILE_SERVER_URL}/{relative}"
 
 
 @dataclass(frozen=True)
@@ -52,7 +58,8 @@ class ThumbnailCell(QFrame):
         self.thumbnail = QLabel()
         self.thumbnail.setFixedSize(120, 120)
         self.thumbnail.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.thumbnail.setPixmap(self._thumbnail(record.image_path))
+        self.thumbnail.setText("Loading...")
+        self._network = QNetworkAccessManager(self)
         self.name = QLabel(record.filename)
         self.name.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.name.setWordWrap(True)
@@ -66,6 +73,8 @@ class ThumbnailCell(QFrame):
         layout.addWidget(self.checkbox, alignment=Qt.AlignmentFlag.AlignRight)
         layout.addWidget(self.thumbnail, alignment=Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(self.name)
+
+        self._load_thumbnail()
 
     def mouseReleaseEvent(self, event: QMouseEvent) -> None:
         if event.button() == Qt.MouseButton.LeftButton and not self.checkbox.geometry().contains(event.position().toPoint()):
@@ -84,16 +93,30 @@ class ThumbnailCell(QFrame):
         palette.setColor(role, palette.color(palette.ColorRole.Highlight if selected else palette.ColorRole.Window))
         self.setPalette(palette)
 
-    @staticmethod
-    def _thumbnail(image_path: str) -> QPixmap:
-        pixmap = QPixmap(image_path)
-        if pixmap.isNull():
-            try:
-                with Image.open(Path(image_path)) as image:
-                    pixmap = QPixmap.fromImage(ImageQt.ImageQt(image.convert("RGBA")))
-            except (OSError, ValueError):
-                return QPixmap()
-        return pixmap.scaled(114, 114, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
+    def _load_thumbnail(self) -> None:
+        if self.record.image_path.startswith(LOCAL_UPLOAD_PREFIX):
+            self.thumbnail.setText("Mac-only upload")
+            return
+        reply = self._network.get(QNetworkRequest(QUrl(image_path_to_url(self.record.image_path))))
+        reply.finished.connect(lambda: self._thumbnail_loaded(reply))
+
+    def _thumbnail_loaded(self, reply: QNetworkReply) -> None:
+        if reply.error() == QNetworkReply.NetworkError.NoError:
+            pixmap = QPixmap()
+            if pixmap.loadFromData(reply.readAll()):
+                self.thumbnail.setPixmap(
+                    pixmap.scaled(
+                        114,
+                        114,
+                        Qt.AspectRatioMode.KeepAspectRatio,
+                        Qt.TransformationMode.SmoothTransformation,
+                    )
+                )
+            else:
+                self.thumbnail.setText("Invalid image")
+        else:
+            self.thumbnail.setText("Preview unavailable")
+        reply.deleteLater()
 
 
 class FileBrowserWidget(QWidget):

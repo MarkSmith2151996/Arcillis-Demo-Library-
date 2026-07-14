@@ -6,46 +6,28 @@ import sys
 
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QAction, QColor, QPalette
-from PySide6.QtWidgets import QApplication, QLabel, QListWidget, QMainWindow, QMessageBox, QStatusBar
+from PySide6.QtWidgets import QApplication, QLabel, QMainWindow, QMessageBox, QStatusBar
 
 from db import is_available
 from plugins.base import DemoPlugin
 from plugins.document_extractor import DocumentExtractorPlugin
+from widgets.demo_selector_window import DemoSelectorWindow
 
 
 class DemoBench(QMainWindow):
     """Host registered demos in a stable shell with dockable work areas."""
 
-    def __init__(self) -> None:
+    def __init__(self, initial_plugin: int = 0) -> None:
         super().__init__()
         self.setWindowTitle("Arcillis Demo Bench")
         self.resize(1440, 900)
         self.setDockNestingEnabled(True)
         self.plugins: list[DemoPlugin] = [DocumentExtractorPlugin(self)]
         self.active_plugin: DemoPlugin | None = None
-        self._setup_demo_selector()
         self._setup_menu()
         self._setup_status_bar()
-        self._activate_plugin(0)
+        self._activate_plugin(initial_plugin)
         self._default_layout = self.saveState()
-
-    def _setup_demo_selector(self) -> None:
-        self.demo_selector = QListWidget()
-        self.demo_selector.setMinimumWidth(190)
-        self.demo_selector.addItems([f"{plugin.icon}  {plugin.name}" for plugin in self.plugins])
-        self.demo_selector.currentRowChanged.connect(self._activate_plugin)
-        selector_dock = self._make_selector_dock()
-        self.addDockWidget(Qt.DockWidgetArea.LeftDockWidgetArea, selector_dock)
-        self.demo_selector.setCurrentRow(0)
-
-    def _make_selector_dock(self):  # type: ignore[no-untyped-def]
-        from PySide6.QtWidgets import QDockWidget
-
-        dock = QDockWidget("Demos", self)
-        dock.setObjectName("demoSelectorDock")
-        dock.setWidget(self.demo_selector)
-        dock.setFeatures(QDockWidget.DockWidgetFeature.NoDockWidgetFeatures)
-        return dock
 
     def _setup_menu(self) -> None:
         file_menu = self.menuBar().addMenu("File")
@@ -104,7 +86,10 @@ def apply_dark_palette(app: QApplication) -> None:
 def main() -> int:
     app = QApplication(sys.argv)
     apply_dark_palette(app)
-    window = DemoBench()
+    selector = DemoSelectorWindow()
+    if not selector.exec() or selector.selected_index is None:
+        return 0
+    window = DemoBench(selector.selected_index)
     window.show()
     return app.exec()
 

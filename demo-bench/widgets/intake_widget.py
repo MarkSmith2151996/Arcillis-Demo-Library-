@@ -15,6 +15,7 @@ from db import get_connection
 
 SUPPORTED_IMAGES = {".png", ".jpg", ".jpeg", ".tiff", ".tif"}
 INTAKE_DIR = Path(__file__).resolve().parent.parent / "intake"
+LOCAL_UPLOAD_PREFIX = "mac-local://"
 
 
 class IntakeWidget(QWidget):
@@ -72,6 +73,10 @@ class IntakeWidget(QWidget):
         created: list[Path] = []
         try:
             for source in files:
+                if source.suffix.lower() not in SUPPORTED_IMAGES | {".pdf"}:
+                    continue
+                # The dropped file is available on the recording Mac, not the PC file server.
+                source.read_bytes()
                 if source.suffix.lower() == ".pdf":
                     created.extend(self._render_pdf(source))
                 elif source.suffix.lower() in SUPPORTED_IMAGES:
@@ -133,5 +138,5 @@ class IntakeWidget(QWidget):
                             (filename, image_path, dataset_source, split)
                         VALUES (%s, %s, %s, %s)
                         """,
-                        (path.name, str(path), "user_upload", "intake"),
+                        (path.name, f"{LOCAL_UPLOAD_PREFIX}{path.name}", "user_upload", "intake"),
                     )
