@@ -20,6 +20,7 @@
 
 ## Last 10 Changes
 
+- 2026-07-14: Switched Demo Bench thumbnail and document loading from the PC HTTP file server to locally synced Mac paths, including `mac-local://` uploads, so image viewing works offline once datasets are present.
 - 2026-07-14: Made Demo Bench source-path conversion handle absolute and dataset-relative database paths, URL-encode filenames, log every thumbnail/document request and HTTP result, show source filenames on failures, use smaller five-column thumbnail cells, make File Browser the central workspace, narrow Intake, and guard dock-grid cleanup from null widgets.
 - 2026-07-13: Updated Demo Bench to fetch WSL-hosted source images asynchronously through the PC file server, mark Mac-only intake uploads as intentionally remote-unavailable, and open with a dark Document Extractor landing dialog instead of a selector sidebar.
 - 2026-07-13: Added the dockable PySide6 Demo Bench shell for the Document Extractor demo. It includes a plugin registry, Postgres connection indicator, dark palette, local PDF/image intake, lazy filtered database thumbnail browser, zoomable viewer, and batch-status placeholder.
@@ -32,4 +33,3 @@
 ## Known Issues
 
 - The local OpenCode vision proxy on port 4096 was unavailable during AC-054 implementation, so live model extraction remains unverified until the proxy is started.
-- The Demo Bench host cannot currently reach the PC file server or Postgres through `100.95.20.98` from this WSL session; live thumbnail HTTP validation must be run from the recording Mac once that connectivity is restored.

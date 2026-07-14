@@ -3,9 +3,8 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from PySide6.QtCore import QEvent, Qt, QUrl, Signal
+from PySide6.QtCore import QEvent, Qt, Signal
 from PySide6.QtGui import QMouseEvent, QPixmap
-from PySide6.QtNetwork import QNetworkAccessManager, QNetworkReply, QNetworkRequest
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -19,13 +18,10 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from db import get_connection, image_path_to_url
+from db import get_connection, resolve_local_image_path
 
 
 BATCH_SIZE = 50
-LOCAL_UPLOAD_PREFIX = "mac-local://"
-
-
 @dataclass(frozen=True)
 class DocumentRecord:
     """One browser item returned by the source-document query."""
@@ -52,7 +48,6 @@ class ThumbnailCell(QFrame):
         self.thumbnail.setFixedSize(100, 100)
         self.thumbnail.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.thumbnail.setText("Loading...")
-        self._network = QNetworkAccessManager(self)
         self.name = QLabel(record.filename)
         self.name.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.name.setWordWrap(True)
@@ -87,36 +82,21 @@ class ThumbnailCell(QFrame):
         self.setPalette(palette)
 
     def _load_thumbnail(self) -> None:
-        if self.record.image_path.startswith(LOCAL_UPLOAD_PREFIX):
-            self.thumbnail.setText("Mac-only upload")
-            return
-        url = image_path_to_url(self.record.image_path)
-        print(f"Thumbnail request: {url}")
-        reply = self._network.get(QNetworkRequest(QUrl(url)))
-        reply.finished.connect(lambda: self._thumbnail_loaded(reply))
-
-    def _thumbnail_loaded(self, reply: QNetworkReply) -> None:
-        url = reply.url().toString()
-        status = reply.attribute(QNetworkRequest.Attribute.HttpStatusCodeAttribute)
-        if reply.error() == QNetworkReply.NetworkError.NoError:
-            print(f"Thumbnail response {status or 200}: {url}")
-            pixmap = QPixmap()
-            if pixmap.loadFromData(reply.readAll()):
-                self.thumbnail.setPixmap(
-                    pixmap.scaled(
-                        94,
-                        94,
-                        Qt.AspectRatioMode.KeepAspectRatio,
-                        Qt.TransformationMode.SmoothTransformation,
-                    )
-                )
-            else:
-                self.thumbnail.setText(self.record.filename)
-                print(f"Thumbnail decode failed: {url}")
-        else:
+        local_path = resolve_local_image_path(self.record.image_path)
+        print(f"Loading thumbnail: {local_path}")
+        pixmap = QPixmap()
+        if not pixmap.load(local_path):
             self.thumbnail.setText(self.record.filename)
-            print(f"Thumbnail failed ({reply.errorString()}, HTTP {status or 'no response'}): {url}")
-        reply.deleteLater()
+            print(f"Thumbnail missing: {local_path}")
+            return
+        self.thumbnail.setPixmap(
+            pixmap.scaled(
+                94,
+                94,
+                Qt.AspectRatioMode.KeepAspectRatio,
+                Qt.TransformationMode.SmoothTransformation,
+            )
+        )
 
 
 class FileBrowserWidget(QWidget):

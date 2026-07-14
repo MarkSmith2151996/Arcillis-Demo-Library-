@@ -2,9 +2,8 @@
 
 from __future__ import annotations
 
-from PySide6.QtCore import Qt, QUrl
+from PySide6.QtCore import Qt
 from PySide6.QtGui import QAction, QPixmap
-from PySide6.QtNetwork import QNetworkAccessManager, QNetworkReply, QNetworkRequest
 from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
@@ -14,10 +13,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from db import image_path_to_url
-
-
-LOCAL_UPLOAD_PREFIX = "mac-local://"
+from db import resolve_local_image_path
 
 
 class DocumentViewerWidget(QWidget):
@@ -35,8 +31,6 @@ class DocumentViewerWidget(QWidget):
         self.scroll_area.setWidgetResizable(False)
         self._original = QPixmap()
         self._zoom = 1.0
-        self._network = QNetworkAccessManager(self)
-        self._image_reply: QNetworkReply | None = None
 
         toolbar = QToolBar()
         fit_action = QAction("Fit width", self, triggered=self.fit_to_width)
@@ -52,22 +46,16 @@ class DocumentViewerWidget(QWidget):
         layout.addWidget(self.scroll_area)
 
     def show_document(self, image_path: str, filename: str) -> None:
-        """Load a selected document over HTTP and fit it into the viewer width."""
+        """Load a selected document from local disk and fit it to the viewer width."""
         self.filename.setText(filename)
         self._original = QPixmap()
-        previous_reply = self._image_reply
-        if previous_reply is not None:
-            previous_reply.abort()
-            previous_reply.deleteLater()
-        if image_path.startswith(LOCAL_UPLOAD_PREFIX):
-            self.image_label.setText("This Mac-only upload is not available from the file server")
+        local_path = resolve_local_image_path(image_path)
+        print(f"Loading document: {local_path}")
+        if not self._original.load(local_path):
+            self.image_label.setText(f"Cannot load {filename}")
+            print(f"Document missing: {local_path}")
             return
-        self.image_label.setText("Loading document...")
-        url = image_path_to_url(image_path)
-        print(f"Document request: {url}")
-        reply = self._network.get(QNetworkRequest(QUrl(url)))
-        self._image_reply = reply
-        reply.finished.connect(lambda: self._document_loaded(reply, filename))
+        self.fit_to_width()
 
     def fit_to_width(self) -> None:
         """Scale the displayed document to the available content width."""
@@ -97,25 +85,3 @@ class DocumentViewerWidget(QWidget):
             self._original.scaled(size, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
         )
         self.image_label.resize(self.image_label.pixmap().size())
-
-    def _document_loaded(self, reply: QNetworkReply, filename: str) -> None:
-        if reply is not self._image_reply:
-            reply.deleteLater()
-            return
-        self._image_reply = None
-        if reply.error() != QNetworkReply.NetworkError.NoError:
-            self.image_label.setText(f"Cannot load {filename}")
-            print(f"Document failed ({reply.errorString()}): {reply.url().toString()}")
-            reply.deleteLater()
-            return
-        print(
-            f"Document response {reply.attribute(QNetworkRequest.Attribute.HttpStatusCodeAttribute) or 200}: "
-            f"{reply.url().toString()}"
-        )
-        self._original = QPixmap()
-        if not self._original.loadFromData(reply.readAll()):
-            self.image_label.setText(f"Cannot load {filename}")
-            reply.deleteLater()
-            return
-        reply.deleteLater()
-        self.fit_to_width()
