@@ -14,17 +14,10 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from db import FILE_SERVER_URL
+from db import image_path_to_url
 
 
 LOCAL_UPLOAD_PREFIX = "mac-local://"
-
-
-def image_path_to_url(image_path: str) -> str:
-    """Map a database WSL path onto the PC's HTTP file server."""
-    base = "/home/dev/projects/Arcillis-Demo-Library/"
-    relative = image_path[len(base) :] if image_path.startswith(base) else image_path
-    return f"{FILE_SERVER_URL}/{relative}"
 
 
 class DocumentViewerWidget(QWidget):
@@ -62,14 +55,17 @@ class DocumentViewerWidget(QWidget):
         """Load a selected document over HTTP and fit it into the viewer width."""
         self.filename.setText(filename)
         self._original = QPixmap()
-        if self._image_reply:
-            self._image_reply.abort()
-            self._image_reply.deleteLater()
+        previous_reply = self._image_reply
+        if previous_reply is not None:
+            previous_reply.abort()
+            previous_reply.deleteLater()
         if image_path.startswith(LOCAL_UPLOAD_PREFIX):
             self.image_label.setText("This Mac-only upload is not available from the file server")
             return
         self.image_label.setText("Loading document...")
-        reply = self._network.get(QNetworkRequest(QUrl(image_path_to_url(image_path))))
+        url = image_path_to_url(image_path)
+        print(f"Document request: {url}")
+        reply = self._network.get(QNetworkRequest(QUrl(url)))
         self._image_reply = reply
         reply.finished.connect(lambda: self._document_loaded(reply, filename))
 
@@ -109,8 +105,13 @@ class DocumentViewerWidget(QWidget):
         self._image_reply = None
         if reply.error() != QNetworkReply.NetworkError.NoError:
             self.image_label.setText(f"Cannot load {filename}")
+            print(f"Document failed ({reply.errorString()}): {reply.url().toString()}")
             reply.deleteLater()
             return
+        print(
+            f"Document response {reply.attribute(QNetworkRequest.Attribute.HttpStatusCodeAttribute) or 200}: "
+            f"{reply.url().toString()}"
+        )
         self._original = QPixmap()
         if not self._original.loadFromData(reply.readAll()):
             self.image_label.setText(f"Cannot load {filename}")

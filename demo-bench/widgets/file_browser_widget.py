@@ -19,18 +19,11 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from db import FILE_SERVER_URL, get_connection
+from db import get_connection, image_path_to_url
 
 
 BATCH_SIZE = 50
 LOCAL_UPLOAD_PREFIX = "mac-local://"
-
-
-def image_path_to_url(image_path: str) -> str:
-    """Map a database WSL path onto the PC's HTTP file server."""
-    base = "/home/dev/projects/Arcillis-Demo-Library/"
-    relative = image_path[len(base) :] if image_path.startswith(base) else image_path
-    return f"{FILE_SERVER_URL}/{relative}"
 
 
 @dataclass(frozen=True)
@@ -56,7 +49,7 @@ class ThumbnailCell(QFrame):
         self.setFrameShape(QFrame.Shape.StyledPanel)
         self.setAutoFillBackground(True)
         self.thumbnail = QLabel()
-        self.thumbnail.setFixedSize(120, 120)
+        self.thumbnail.setFixedSize(100, 100)
         self.thumbnail.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.thumbnail.setText("Loading...")
         self._network = QNetworkAccessManager(self)
@@ -97,25 +90,32 @@ class ThumbnailCell(QFrame):
         if self.record.image_path.startswith(LOCAL_UPLOAD_PREFIX):
             self.thumbnail.setText("Mac-only upload")
             return
-        reply = self._network.get(QNetworkRequest(QUrl(image_path_to_url(self.record.image_path))))
+        url = image_path_to_url(self.record.image_path)
+        print(f"Thumbnail request: {url}")
+        reply = self._network.get(QNetworkRequest(QUrl(url)))
         reply.finished.connect(lambda: self._thumbnail_loaded(reply))
 
     def _thumbnail_loaded(self, reply: QNetworkReply) -> None:
+        url = reply.url().toString()
+        status = reply.attribute(QNetworkRequest.Attribute.HttpStatusCodeAttribute)
         if reply.error() == QNetworkReply.NetworkError.NoError:
+            print(f"Thumbnail response {status or 200}: {url}")
             pixmap = QPixmap()
             if pixmap.loadFromData(reply.readAll()):
                 self.thumbnail.setPixmap(
                     pixmap.scaled(
-                        114,
-                        114,
+                        94,
+                        94,
                         Qt.AspectRatioMode.KeepAspectRatio,
                         Qt.TransformationMode.SmoothTransformation,
                     )
                 )
             else:
-                self.thumbnail.setText("Invalid image")
+                self.thumbnail.setText(self.record.filename)
+                print(f"Thumbnail decode failed: {url}")
         else:
-            self.thumbnail.setText("Preview unavailable")
+            self.thumbnail.setText(self.record.filename)
+            print(f"Thumbnail failed ({reply.errorString()}, HTTP {status or 'no response'}): {url}")
         reply.deleteLater()
 
 
@@ -240,7 +240,7 @@ class FileBrowserWidget(QWidget):
                 cell.checkbox.blockSignals(False)
                 cell.set_selected(True)
             position = self.loaded
-            self.grid.addWidget(cell, position // 4, position % 4)
+            self.grid.addWidget(cell, position // 5, position % 5)
             self.cells[record.id] = cell
             self.loaded += 1
 
@@ -261,5 +261,6 @@ class FileBrowserWidget(QWidget):
     def _clear_grid(self) -> None:
         while self.grid.count():
             item = self.grid.takeAt(0)
-            if item.widget():
-                item.widget().deleteLater()
+            widget = item.widget()
+            if widget is not None:
+                widget.deleteLater()

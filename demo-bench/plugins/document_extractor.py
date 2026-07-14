@@ -21,15 +21,16 @@ class DocumentExtractorPlugin(DemoPlugin):
     def __init__(self, window: QMainWindow) -> None:
         self.window = window
         self.intake = IntakeWidget()
+        self.intake.setMaximumWidth(300)
         self.browser = FileBrowserWidget()
         self.viewer = DocumentViewerWidget()
         self.batch_status = BatchStatusWidget()
         self.widgets = [
             self._dock("Intake", self.intake),
-            self._dock("File Browser", self.browser),
             self._dock("Document Viewer", self.viewer),
             self._dock("Batch Status", self.batch_status),
         ]
+        self.widgets[0].setMaximumWidth(320)
         self._added = False
         self.intake.ingested.connect(lambda _: self.browser.reload())
         self.intake.status_changed.connect(window.statusBar().showMessage)
@@ -39,15 +40,18 @@ class DocumentExtractorPlugin(DemoPlugin):
     def activate(self) -> None:
         if not self._added:
             self.window.addDockWidget(Qt.DockWidgetArea.LeftDockWidgetArea, self.widgets[0])
+            self.window.setCentralWidget(self.browser)
             self.window.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, self.widgets[1])
-            self.window.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, self.widgets[2])
-            self.window.addDockWidget(Qt.DockWidgetArea.BottomDockWidgetArea, self.widgets[3])
-            self.window.tabifyDockWidget(self.widgets[1], self.widgets[2])
+            self.window.addDockWidget(Qt.DockWidgetArea.BottomDockWidgetArea, self.widgets[2])
+            self.window.resizeDocks(self.widgets[:2], [300, 300], Qt.Orientation.Horizontal)
+            self.window.resizeDocks([self.widgets[2]], [180], Qt.Orientation.Vertical)
             self._added = True
+        self.browser.show()
         for widget in self.widgets:
             widget.show()
 
     def deactivate(self) -> None:
+        self.browser.hide()
         for widget in self.widgets:
             widget.hide()
 
