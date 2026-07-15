@@ -180,13 +180,20 @@ class ChatWidget(QObject):
         self.mcp_tools: list[dict[str, Any]] = []
         self._worker: ChatWorker | None = None
 
-        self.bubble = QPushButton("💬", main_window)
+        self.bubble = QPushButton("💬", None)
+        self.bubble.setWindowFlags(
+            Qt.WindowType.Tool | Qt.WindowType.FramelessWindowHint | Qt.WindowType.WindowStaysOnTopHint
+        )
         self.bubble.setFixedSize(48, 48)
         self.bubble.setToolTip("Ask about extraction results")
         self.bubble.setStyleSheet("border-radius: 24px; background: #2878c7; color: white; font-size: 20px;")
+        self.bubble.setCursor(Qt.CursorShape.PointingHandCursor)
         self.bubble.clicked.connect(self._expand)
 
-        self.panel = QFrame(main_window, Qt.WindowType.Tool | Qt.WindowType.FramelessWindowHint)
+        self.panel = QFrame(None)
+        self.panel.setWindowFlags(
+            Qt.WindowType.Tool | Qt.WindowType.FramelessWindowHint | Qt.WindowType.WindowStaysOnTopHint
+        )
         self.panel.setFrameShape(QFrame.Shape.StyledPanel)
         self.panel.setStyleSheet("QFrame { background: #252a32; border: 1px solid #4a5360; border-radius: 8px; }")
         self._build_panel()
@@ -196,15 +203,16 @@ class ChatWidget(QObject):
         self._discover_tools()
 
     def eventFilter(self, watched: QObject, event: QEvent) -> bool:
-        if watched is self.main_window and event.type() in (QEvent.Type.Resize, QEvent.Type.Show):
-            QTimer.singleShot(0, self._position_overlays)
+        if watched is self.main_window:
+            if event.type() == QEvent.Type.Close:
+                self.hide()
+            elif event.type() in (QEvent.Type.Resize, QEvent.Type.Show):
+                QTimer.singleShot(0, self._position_overlays)
         return super().eventFilter(watched, event)
 
     def show(self) -> None:
-        self.bubble.show()
-        if self.panel.isVisible():
-            self.panel.show()
         self._position_overlays()
+        self.bubble.show()
 
     def hide(self) -> None:
         self.bubble.hide()
@@ -263,6 +271,7 @@ class ChatWidget(QObject):
         self.bubble.setToolTip(f"MCP tools unavailable: {error}")
 
     def _expand(self) -> None:
+        self._position_overlays()
         self.panel.show()
         self.panel.raise_()
         self.bubble.hide()
@@ -270,19 +279,24 @@ class ChatWidget(QObject):
 
     def _collapse(self) -> None:
         self.panel.hide()
+        self._position_overlays()
         self.bubble.show()
         self.bubble.raise_()
 
     def _position_overlays(self) -> None:
+        geo = self.main_window.frameGeometry()
         margin = 16
-        bubble_x = max(margin, self.main_window.width() - self.bubble.width() - margin)
-        bubble_y = max(margin, self.main_window.height() - self.bubble.height() - margin)
-        self.bubble.move(bubble_x, bubble_y)
-        panel_width = min(400, max(280, self.main_window.width() - margin * 2))
-        panel_height = min(500, max(300, self.main_window.height() - margin * 2))
+        self.bubble.move(
+            geo.x() + geo.width() - self.bubble.width() - margin,
+            geo.y() + geo.height() - self.bubble.height() - margin,
+        )
+        panel_width = min(400, max(280, geo.width() - margin * 2))
+        panel_height = min(500, max(300, geo.height() - margin * 2))
         self.panel.resize(panel_width, panel_height)
-        global_pos = self.main_window.mapToGlobal(self.main_window.rect().bottomRight())
-        self.panel.move(global_pos.x() - panel_width - margin, global_pos.y() - panel_height - margin)
+        self.panel.move(
+            geo.x() + geo.width() - panel_width - margin,
+            geo.y() + geo.height() - panel_height - margin,
+        )
 
     def _send(self) -> None:
         text = self.input.text().strip()
