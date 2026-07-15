@@ -15,11 +15,14 @@
 
 - `demo-bench/main.py`: Application shell, landing dialog launch, dock-layout reset, dark palette, and connection status indicator.
 - `demo-bench/widgets/demo_selector_window.py`: Dark landing dialog and clickable Document Extractor demo card.
-- `demo-bench/plugins/document_extractor.py`: Registers and lays out the four Document Extractor docks.
-- `demo-bench/widgets/`: Intake, lazy thumbnail browser, document viewer, and batch-status components.
+- `demo-bench/plugins/document_extractor.py`: Registers and lays out the Document Extractor intake, viewer, batch status, results table, and export docks.
+- `demo-bench/widgets/results_table_widget.py`: Loads extraction records, grades, selectable rows, and field-level comparisons from Postgres.
+- `demo-bench/widgets/export_widget.py`: Exports checked (or confirmed all) extraction records as CSV or formatted Excel.
+- `demo-bench/widgets/`: Intake, lazy thumbnail browser, document viewer, batch-status, results-table, and export components.
 
 ## Last 10 Changes
 
+- 2026-07-15: Added Demo Bench Results Table and Export docks. Results display extraction grades, selectable records, source-image navigation, and field-level ground-truth comparisons; checked records export to CSV or Excel.
 - 2026-07-14: Switched Demo Bench thumbnail and document loading from the PC HTTP file server to locally synced Mac paths, including `mac-local://` uploads, so image viewing works offline once datasets are present.
 - 2026-07-14: Made Demo Bench source-path conversion handle absolute and dataset-relative database paths, URL-encode filenames, log every thumbnail/document request and HTTP result, show source filenames on failures, use smaller five-column thumbnail cells, make File Browser the central workspace, narrow Intake, and guard dock-grid cleanup from null widgets.
 - 2026-07-13: Updated Demo Bench to fetch WSL-hosted source images asynchronously through the PC file server, mark Mac-only intake uploads as intentionally remote-unavailable, and open with a dark Document Extractor landing dialog instead of a selector sidebar.
@@ -28,7 +31,6 @@
 - 2026-07-13: Completed direct agent-vision extraction for all 125 mychen76 test receipts under `mychen76-test-run`; schema-agnostic grading averaged 79.10%, with a 0.00% to 100.00% range and no unreadable-image error records.
 - 2026-07-13: Downloaded and materialized 295 mychen76 invoice/receipt records for Demo 2 stress testing (100 train, 125 test, 70 valid), then loaded them idempotently into `arcillis.demo2_invoice` under the `mychen76` dataset source. The 259 MB local dataset is gitignored; 174 records use the Donut-compatible `header`/`items`/`summary` form, while 120 receipt records are flat and one valid record is wrapped under `None`.
 - 2026-07-13: Added Demo 2's idempotent Donut ground-truth loader, OpenCode vision extractor, field-level auto-grader, and Postgres batch runner. The 501-record dataset has nested and flat variants; grading canonicalizes both.
-- 2026-07-12: Downloaded and materialized the Donut invoice evaluation dataset locally; documented its ground-truth schema and Git-ignore policy.
 
 ## Known Issues
 
