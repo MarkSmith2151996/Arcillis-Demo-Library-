@@ -24,6 +24,7 @@
 
 ## Last 10 Changes
 
+- 2026-07-15: Added a workflow navigation bar to the Document Extractor demo. It defaults to Browse, switches tab-specific docks while retaining document and batch context, and makes the floating chat panel a top-level tool window above dock widgets.
 - 2026-07-15: Added a Demo Bench FastAPI MCP server with guarded Demo 2 query, detail, summary, export, and reprocess tools, plus a threaded floating DeepSeek chat widget that can highlight result-table invoices.
 - 2026-07-15: Added Demo Bench Results Table and Export docks. Results display extraction grades, selectable records, source-image navigation, and field-level ground-truth comparisons; checked records export to CSV or Excel.
 - 2026-07-14: Switched Demo Bench thumbnail and document loading from the PC HTTP file server to locally synced Mac paths, including `mac-local://` uploads, so image viewing works offline once datasets are present.
@@ -33,7 +34,6 @@
 - 2026-07-13: Added Demo 2's standalone output MCP server. Its Excel, CSV, and Google Sheets tools fetch a run or accept raw extraction JSON, emit an identical flattened table structure, format local workbooks, and clearly skip Sheets when no service account is configured.
 - 2026-07-13: Completed direct agent-vision extraction for all 125 mychen76 test receipts under `mychen76-test-run`; schema-agnostic grading averaged 79.10%, with a 0.00% to 100.00% range and no unreadable-image error records.
 - 2026-07-13: Downloaded and materialized 295 mychen76 invoice/receipt records for Demo 2 stress testing (100 train, 125 test, 70 valid), then loaded them idempotently into `arcillis.demo2_invoice` under the `mychen76` dataset source. The 259 MB local dataset is gitignored; 174 records use the Donut-compatible `header`/`items`/`summary` form, while 120 receipt records are flat and one valid record is wrapped under `None`.
-- 2026-07-13: Added Demo 2's idempotent Donut ground-truth loader, OpenCode vision extractor, field-level auto-grader, and Postgres batch runner. The 501-record dataset has nested and flat variants; grading canonicalizes both.
 
 ## Known Issues
 
