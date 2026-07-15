@@ -9,3 +9,9 @@ demo-2-pdf-extractor/datasets/mychen76-invoices/
 __pycache__/
 *.py[cod]
 demo-2-pdf-extractor/extraction_workbook.html
+
+# ARC Toolbar (Tauri + Vite)
+arc-toolbar/node_modules/
+arc-toolbar/src-tauri/target/
+arc-toolbar/dist/
+.DS_Store
