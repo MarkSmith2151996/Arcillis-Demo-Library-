@@ -12,6 +12,7 @@ from widgets.chat_widget import ChatWidget
 from widgets.document_viewer_widget import DocumentViewerWidget
 from widgets.file_browser_widget import FileBrowserWidget
 from widgets.intake_widget import IntakeWidget
+from widgets.nav_toolbar import NavToolbar
 from widgets.export_widget import ExportWidget
 from widgets.results_table_widget import ResultsTableWidget
 
@@ -31,6 +32,7 @@ class DocumentExtractorPlugin(DemoPlugin):
         self.batch_status = BatchStatusWidget()
         self.results_table = ResultsTableWidget()
         self.export = ExportWidget(self.results_table)
+        self.nav_toolbar = NavToolbar(window)
         self.chat = ChatWidget(
             window,
             demo_name="document_extractor",
@@ -44,6 +46,13 @@ class DocumentExtractorPlugin(DemoPlugin):
             self._dock("Export", self.export),
         ]
         self.widgets[0].setMaximumWidth(320)
+        self._tab_docks = {
+            "intake": [self.widgets[0]],
+            "browse": [],
+            "results": [self.widgets[3]],
+            "export": [self.widgets[3], self.widgets[4]],
+        }
+        self._persistent_docks = [self.widgets[1], self.widgets[2]]
         self._added = False
         self.intake.ingested.connect(lambda _: self.browser.reload())
         self.intake.status_changed.connect(window.statusBar().showMessage)
@@ -52,6 +61,7 @@ class DocumentExtractorPlugin(DemoPlugin):
         self.results_table.status_changed.connect(window.statusBar().showMessage)
         self.results_table.invoice_selected.connect(self._show_result_document)
         self.chat.highlight_requested.connect(self._highlight_invoice)
+        self.nav_toolbar.tab_changed.connect(self._show_tab)
 
     def activate(self) -> None:
         if not self._added:
@@ -63,17 +73,26 @@ class DocumentExtractorPlugin(DemoPlugin):
             self.window.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, self.widgets[4])
             self.window.resizeDocks(self.widgets[:2], [300, 300], Qt.Orientation.Horizontal)
             self.window.resizeDocks(self.widgets[2:4], [180, 240], Qt.Orientation.Vertical)
+            self.window.setMenuWidget(self.nav_toolbar)
             self._added = True
-        self.browser.show()
-        for widget in self.widgets:
-            widget.show()
+        self.nav_toolbar.show()
+        self.nav_toolbar.set_active_tab("browse")
         self.chat.show()
 
     def deactivate(self) -> None:
         self.browser.hide()
+        self.nav_toolbar.hide()
         for widget in self.widgets:
             widget.hide()
         self.chat.hide()
+
+    def _show_tab(self, tab: str) -> None:
+        """Show the selected workflow controls while preserving common context docks."""
+        self.browser.setVisible(tab == "browse")
+        for dock in self.widgets:
+            dock.hide()
+        for dock in [*self._persistent_docks, *self._tab_docks[tab]]:
+            dock.show()
 
     def _show_result_document(self, invoice_id: int) -> None:
         """Load the source image stored alongside the clicked extraction result."""

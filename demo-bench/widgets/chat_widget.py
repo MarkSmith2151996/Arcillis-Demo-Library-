@@ -186,7 +186,7 @@ class ChatWidget(QObject):
         self.bubble.setStyleSheet("border-radius: 24px; background: #2878c7; color: white; font-size: 20px;")
         self.bubble.clicked.connect(self._expand)
 
-        self.panel = QFrame(main_window)
+        self.panel = QFrame(main_window, Qt.WindowType.Tool | Qt.WindowType.FramelessWindowHint)
         self.panel.setFrameShape(QFrame.Shape.StyledPanel)
         self.panel.setStyleSheet("QFrame { background: #252a32; border: 1px solid #4a5360; border-radius: 8px; }")
         self._build_panel()
@@ -281,7 +281,8 @@ class ChatWidget(QObject):
         panel_width = min(400, max(280, self.main_window.width() - margin * 2))
         panel_height = min(500, max(300, self.main_window.height() - margin * 2))
         self.panel.resize(panel_width, panel_height)
-        self.panel.move(max(margin, self.main_window.width() - panel_width - margin), max(margin, self.main_window.height() - panel_height - margin))
+        global_pos = self.main_window.mapToGlobal(self.main_window.rect().bottomRight())
+        self.panel.move(global_pos.x() - panel_width - margin, global_pos.y() - panel_height - margin)
 
     def _send(self) -> None:
         text = self.input.text().strip()
