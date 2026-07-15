@@ -31,6 +31,7 @@
 
 ## Last 10 Changes
 
+- 2026-07-15: Fixed ARC Toolbar window drag and close on macOS — added `startDragging()` on titlebar mousedown, try/catch on minimize/close, `-webkit-app-region` CSS fallback, and console logging.
 - 2026-07-15: Added ARC Toolbar — a Tauri (v2) + Vite vanilla JS floating desktop app with three layout modes (Nokia, Strip, Chat-first), mock data, custom title bar, and an admin overlay. Visual prototype only; no backend connections.
 - 2026-07-15: Added a workflow navigation bar to the Document Extractor demo. It defaults to Browse, switches tab-specific docks while retaining document and batch context, and makes the floating chat panel a top-level tool window above dock widgets.
 - 2026-07-15: Added a Demo Bench FastAPI MCP server with guarded Demo 2 query, detail, summary, export, and reprocess tools, plus a threaded floating DeepSeek chat widget that can highlight result-table invoices.
@@ -40,7 +41,6 @@
 - 2026-07-13: Updated Demo Bench to fetch WSL-hosted source images asynchronously through the PC file server, mark Mac-only intake uploads as intentionally remote-unavailable, and open with a dark Document Extractor landing dialog instead of a selector sidebar.
 - 2026-07-13: Added the dockable PySide6 Demo Bench shell for the Document Extractor demo. It includes a plugin registry, Postgres connection indicator, dark palette, local PDF/image intake, lazy filtered database thumbnail browser, zoomable viewer, and batch-status placeholder.
 - 2026-07-13: Added Demo 2's standalone output MCP server. Its Excel, CSV, and Google Sheets tools fetch a run or accept raw extraction JSON, emit an identical flattened table structure, format local workbooks, and clearly skip Sheets when no service account is configured.
-- 2026-07-13: Completed direct agent-vision extraction for all 125 mychen76 test receipts under `mychen76-test-run`; schema-agnostic grading averaged 79.10%, with a 0.00% to 100.00% range and no unreadable-image error records.
 
 ## Known Issues
 

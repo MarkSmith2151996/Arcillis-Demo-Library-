@@ -56,6 +56,7 @@ body {
   cursor: grab;
   border-radius: var(--radius-lg) var(--radius-lg) 0 0;
   background: var(--bg-secondary);
+  -webkit-app-region: drag;
 }
 
 .titlebar:active {
@@ -89,6 +90,7 @@ body {
   justify-content: center;
   transition: background 0.15s, color 0.15s;
   user-select: none;
+  -webkit-app-region: no-drag;
 }
 
 .titlebar-btn:hover {

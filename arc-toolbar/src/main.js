@@ -367,10 +367,51 @@ function showAdmin() {
 }
 
 function initWindowControls() {
+  console.log("initWindowControls running");
+
   const minBtn = $("#minimize");
   const closeBtn = $("#close");
-  if (minBtn) minBtn.addEventListener("click", () => appWindow.minimize());
-  if (closeBtn) closeBtn.addEventListener("click", () => appWindow.close());
+  const titlebar = $(".titlebar");
+
+  console.log("minBtn:", !!minBtn, "closeBtn:", !!closeBtn, "titlebar:", !!titlebar);
+
+  if (titlebar) {
+    titlebar.addEventListener("mousedown", (e) => {
+      if (e.target.closest(".titlebar-btn")) return;
+      try {
+        appWindow.startDragging();
+      } catch (err) {
+        console.error("startDragging failed:", err);
+      }
+    });
+  }
+
+  if (minBtn) {
+    minBtn.addEventListener("click", () => {
+      try {
+        appWindow.minimize();
+      } catch (err) {
+        console.error("minimize failed:", err);
+      }
+    });
+  }
+
+  if (closeBtn) {
+    closeBtn.addEventListener("click", () => {
+      try {
+        appWindow.close();
+      } catch (err) {
+        console.error("close failed:", err);
+        try {
+          window.close();
+        } catch (fallbackErr) {
+          console.error("window.close fallback also failed:", fallbackErr);
+        }
+      }
+    });
+  }
+
+  console.log("Window controls initialized");
 }
 
 function initKeyboardShortcuts() {
