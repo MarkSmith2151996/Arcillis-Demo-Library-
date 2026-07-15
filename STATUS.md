@@ -3,9 +3,9 @@
 ## Project
 
 - Custodian project: `arcillis-demo-library`
-- Stack: Python + React + Claude API + Google Sheets API + ChromaDB
-- Current state: Demo 2 extraction pipeline is implemented; the local vision proxy must be started before a live smoke test.
-- Next: Start the OpenCode proxy and run the three-image Demo 2 smoke test.
+- Stack: Python + PySide6 + FastAPI + DeepSeek API + Postgres + Google Sheets API + ChromaDB
+- Current state: Demo 2 extraction pipeline and the Demo Bench MCP/chat controls are implemented; the local vision proxy must be started before a live smoke test.
+- Next: Start the OpenCode proxy and the Demo Bench MCP server, set `DEEPSEEK_API_KEY`, then run the three-image Demo 2 smoke test.
 
 ## Architecture
 
@@ -16,12 +16,15 @@
 - `demo-bench/main.py`: Application shell, landing dialog launch, dock-layout reset, dark palette, and connection status indicator.
 - `demo-bench/widgets/demo_selector_window.py`: Dark landing dialog and clickable Document Extractor demo card.
 - `demo-bench/plugins/document_extractor.py`: Registers and lays out the Document Extractor intake, viewer, batch status, results table, and export docks.
+- `demo-bench/mcp_server/`: FastAPI server on port 8098 with demo-scoped MCP-style tool discovery/calls, guarded read access, result summaries, and local CSV/Excel exports.
+- `demo-bench/widgets/chat_widget.py`: Floating assistant bubble that discovers Demo 2 tools, calls DeepSeek from worker threads, and emits local invoice-highlight requests.
 - `demo-bench/widgets/results_table_widget.py`: Loads extraction records, grades, selectable rows, and field-level comparisons from Postgres.
 - `demo-bench/widgets/export_widget.py`: Exports checked (or confirmed all) extraction records as CSV or formatted Excel.
 - `demo-bench/widgets/`: Intake, lazy thumbnail browser, document viewer, batch-status, results-table, and export components.
 
 ## Last 10 Changes
 
+- 2026-07-15: Added a Demo Bench FastAPI MCP server with guarded Demo 2 query, detail, summary, export, and reprocess tools, plus a threaded floating DeepSeek chat widget that can highlight result-table invoices.
 - 2026-07-15: Added Demo Bench Results Table and Export docks. Results display extraction grades, selectable records, source-image navigation, and field-level ground-truth comparisons; checked records export to CSV or Excel.
 - 2026-07-14: Switched Demo Bench thumbnail and document loading from the PC HTTP file server to locally synced Mac paths, including `mac-local://` uploads, so image viewing works offline once datasets are present.
 - 2026-07-14: Made Demo Bench source-path conversion handle absolute and dataset-relative database paths, URL-encode filenames, log every thumbnail/document request and HTTP result, show source filenames on failures, use smaller five-column thumbnail cells, make File Browser the central workspace, narrow Intake, and guard dock-grid cleanup from null widgets.
