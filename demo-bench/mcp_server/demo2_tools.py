@@ -7,17 +7,22 @@ import json
 import logging
 import os
 import re
+import sys
+import time
 from collections import Counter, defaultdict
 from pathlib import Path
 from typing import Any
 
 import psycopg2
+from psycopg2.extras import Json
 from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill
 
 
-DATABASE_URL = "postgresql://autocore_writer:autocore_pipeline_2026@localhost:5432/hive"
+# Percent-encode the equals sign so psycopg2/libpq parses the search-path option.
+DATABASE_URL = "postgresql://autocore_writer:autocore_pipeline_2026@localhost:5432/hive?options=-csearch_path%3Darcillis"
 EXPORT_DIR = Path(os.environ.get("DEMO_BENCH_EXPORT_DIR", "/tmp/demo-bench-exports"))
+INBOX_STAGING_DIR = Path(os.environ.get("INBOX_STAGING_DIR", "/tmp/arc-inbox-staging"))
 FORBIDDEN_SQL = re.compile(r"\b(?:INSERT|UPDATE|DELETE|DROP|ALTER|CREATE|TRUNCATE)\b", re.IGNORECASE)
 SOURCE_REFERENCE = re.compile(r"\b(?:FROM|JOIN)\s+([^\s,(;]+)", re.IGNORECASE)
 FROM_CLAUSE = re.compile(
@@ -295,3 +300,168 @@ def reprocess_invoices(invoice_ids: list[int]) -> dict[str, Any]:
         "invoice_ids": invoice_ids,
         "message": f"Reprocessing queued for {len(invoice_ids)} invoices. This will be processed in the next extraction batch.",
     }
+
+
+def scan_inbox() -> dict[str, Any]:
+    """Download unread PDF and image attachments from the configured Gmail inbox."""
+    credentials_path = os.environ.get("GMAIL_CREDENTIALS_PATH")
+    if not credentials_path:
+        return {"emails_processed": 0, "attachments_saved": [], "errors": ["GMAIL_CREDENTIALS_PATH is not set."]}
+
+    try:
+        from google.auth.transport.requests import Request
+        from google.oauth2.credentials import Credentials
+        from google_auth_oauthlib.flow import InstalledAppFlow
+        from googleapiclient.discovery import build
+    except ImportError as error:
+        return {"emails_processed": 0, "attachments_saved": [], "errors": [f"Gmail dependencies are unavailable: {error}"]}
+
+    try:
+        scopes = ["https://www.googleapis.com/auth/gmail.modify"]
+        token_path = Path(credentials_path).with_name("gmail-token.json")
+        credentials = Credentials.from_authorized_user_file(token_path, scopes) if token_path.exists() else None
+        if not credentials or not credentials.valid:
+            if credentials and credentials.expired and credentials.refresh_token:
+                credentials.refresh(Request())
+            else:
+                credentials = InstalledAppFlow.from_client_secrets_file(credentials_path, scopes).run_local_server(port=0)
+            token_path.write_text(credentials.to_json(), encoding="utf-8")
+
+        service = build("gmail", "v1", credentials=credentials, cache_discovery=False)
+        messages = service.users().messages().list(userId="me", q="is:unread has:attachment").execute().get("messages", [])
+        INBOX_STAGING_DIR.mkdir(parents=True, exist_ok=True)
+        attachments_saved: list[str] = []
+        errors: list[str] = []
+        emails_processed = 0
+
+        for message_ref in messages:
+            message_id = message_ref["id"]
+            try:
+                message = service.users().messages().get(userId="me", id=message_id).execute()
+                parts = _attachment_parts(message.get("payload", {}))
+                for part in parts:
+                    filename = Path(part.get("filename", "")).name
+                    attachment_id = part.get("body", {}).get("attachmentId")
+                    if not filename or not attachment_id:
+                        continue
+                    content = service.users().messages().attachments().get(
+                        userId="me", messageId=message_id, id=attachment_id
+                    ).execute()["data"]
+                    import base64
+
+                    destination = _unique_path(INBOX_STAGING_DIR / filename)
+                    destination.write_bytes(base64.urlsafe_b64decode(content + "=" * (-len(content) % 4)))
+                    attachments_saved.append(str(destination))
+                service.users().messages().modify(userId="me", id=message_id, body={"removeLabelIds": ["UNREAD"]}).execute()
+                emails_processed += 1
+            except Exception as error:
+                errors.append(f"{message_id}: {error}")
+        return {"emails_processed": emails_processed, "attachments_saved": attachments_saved, "errors": errors}
+    except Exception as error:
+        return {"emails_processed": 0, "attachments_saved": [], "errors": [str(error)]}
+
+
+def _attachment_parts(part: dict[str, Any]) -> list[dict[str, Any]]:
+    """Flatten Gmail MIME parts that contain a downloaded attachment body."""
+    result = [part] if part.get("filename") and part.get("body", {}).get("attachmentId") else []
+    for child in part.get("parts", []):
+        result.extend(_attachment_parts(child))
+    return result
+
+
+def _unique_path(path: Path) -> Path:
+    """Avoid overwriting a same-named attachment from a separate email."""
+    if not path.exists():
+        return path
+    return path.with_stem(f"{path.stem}-{int(time.time() * 1000)}")
+
+
+def run_extraction(source_dir: str | None = None) -> dict[str, Any]:
+    """Extract staged invoice images and persist results using the established vision pipeline."""
+    source = Path(source_dir) if source_dir else INBOX_STAGING_DIR
+    if not source.is_dir():
+        return {"processed": 0, "succeeded": 0, "failed": 0, "errors": [f"Source directory does not exist: {source}"]}
+
+    files = [path for path in sorted(source.iterdir()) if path.suffix.lower() in {".jpg", ".jpeg", ".png", ".webp", ".pdf"}]
+    if not files:
+        return {"processed": 0, "succeeded": 0, "failed": 0, "errors": []}
+
+    try:
+        extract_invoice, grade_extraction, create_client, verify_proxy = _load_extraction_helpers()
+        client = create_client()
+        model_used = verify_proxy(client)
+    except Exception as error:
+        return {"processed": len(files), "succeeded": 0, "failed": len(files), "errors": [str(error)]}
+
+    run_id = f"inbox-{time.strftime('%Y%m%d-%H%M%S')}"
+    succeeded = 0
+    errors: list[str] = []
+    with _connection() as connection:
+        for source_file in files:
+            started = time.perf_counter()
+            try:
+                image_path = _render_pdf(source_file) if source_file.suffix.lower() == ".pdf" else source_file
+                extracted_data = extract_invoice(image_path, client=client, model=model_used)
+                invoice_id, ground_truth = _get_or_create_inbox_invoice(connection, source_file)
+                field_scores, accuracy = grade_extraction(extracted_data, ground_truth)
+                with connection.cursor() as cursor:
+                    cursor.execute(
+                        """
+                        INSERT INTO demo2_extraction
+                            (invoice_id, run_id, model_used, extracted_data, field_scores, overall_accuracy, processing_time_ms)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s)
+                        """,
+                        (invoice_id, run_id, model_used, Json(extracted_data), Json(field_scores), accuracy, round((time.perf_counter() - started) * 1000)),
+                    )
+                connection.commit()
+                succeeded += 1
+            except Exception as error:
+                connection.rollback()
+                errors.append(f"{source_file.name}: {error}")
+    return {"processed": len(files), "succeeded": succeeded, "failed": len(files) - succeeded, "errors": errors}
+
+
+def _load_extraction_helpers() -> tuple[Any, Any, Any, Any]:
+    """Import the existing extraction and grading modules from the sibling demo directory."""
+    extractor_dir = Path(__file__).resolve().parents[2] / "demo-2-pdf-extractor"
+    if str(extractor_dir) not in sys.path:
+        sys.path.insert(0, str(extractor_dir))
+    from extract_invoice import create_client, extract_invoice, verify_proxy
+    from grade_extraction import grade_extraction
+
+    return extract_invoice, grade_extraction, create_client, verify_proxy
+
+
+def _render_pdf(source_file: Path) -> Path:
+    """Render the first PDF page for the vision model without changing source files."""
+    try:
+        import fitz
+    except ImportError as error:
+        raise RuntimeError("PDF extraction requires pymupdf.") from error
+    document = fitz.open(source_file)
+    try:
+        if not document.page_count:
+            raise ValueError("PDF has no pages.")
+        destination = source_file.with_suffix(".page-1.png")
+        document[0].get_pixmap(matrix=fitz.Matrix(2, 2)).save(destination)
+        return destination
+    finally:
+        document.close()
+
+
+def _get_or_create_inbox_invoice(connection: Any, source_file: Path) -> tuple[int, dict[str, Any]]:
+    """Return an existing invoice or create a minimal inbox record for an attachment."""
+    with connection.cursor() as cursor:
+        cursor.execute("SELECT id, ground_truth FROM demo2_invoice WHERE filename = %s", (source_file.name,))
+        row = cursor.fetchone()
+        if row:
+            return int(row[0]), _as_dict(row[1])
+        cursor.execute(
+            """
+            INSERT INTO demo2_invoice (filename, split, ground_truth, image_path, dataset_source)
+            VALUES (%s, 'inbox', %s, %s, 'gmail_inbox')
+            RETURNING id
+            """,
+            (source_file.name, Json({}), str(source_file.resolve())),
+        )
+        return int(cursor.fetchone()[0]), {}

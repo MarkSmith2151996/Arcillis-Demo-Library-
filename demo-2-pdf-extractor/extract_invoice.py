@@ -76,7 +76,7 @@ def create_client(base_url: str | None = None) -> OpenAI:
     resolved_base_url, _ = proxy_settings()
     return OpenAI(
         base_url=base_url or resolved_base_url,
-        api_key="not-needed",
+        api_key=os.getenv("OPENAI_API_KEY", "not-needed"),
         timeout=httpx.Timeout(connect=5.0, read=90.0, write=30.0, pool=5.0),
         max_retries=0,
     )

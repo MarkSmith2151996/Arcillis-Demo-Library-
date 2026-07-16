@@ -18,6 +18,8 @@ from demo2_tools import (
     get_invoice_detail,
     query_extractions,
     reprocess_invoices,
+    run_extraction,
+    scan_inbox,
     summarize_batch,
 )
 
@@ -47,6 +49,8 @@ TOOL_REGISTRY: dict[str, list[Tool]] = {
         Tool("export_to_csv", "Export selected or all extraction results to CSV.", _object({"invoice_ids": {"type": ["array", "null"], "items": {"type": "integer"}}, "filename": {"type": "string"}}, ["filename"]), export_to_csv),
         Tool("export_to_excel", "Export selected or all extraction results to formatted Excel.", _object({"invoice_ids": {"type": ["array", "null"], "items": {"type": "integer"}}, "filename": {"type": "string"}}, ["filename"]), export_to_excel),
         Tool("reprocess_invoices", "Queue invoices for a future extraction rerun.", _object({"invoice_ids": {"type": "array", "items": {"type": "integer"}}}, ["invoice_ids"]), reprocess_invoices),
+        Tool("scan_inbox", "Download unread PDF and image attachments from the configured Gmail inbox.", _object({}), scan_inbox),
+        Tool("run_extraction", "Extract staged invoice images or PDFs and save the results.", _object({"source_dir": {"type": ["string", "null"], "description": "Optional staged attachment directory."}}), run_extraction),
     ],
 }
 

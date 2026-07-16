@@ -4,18 +4,19 @@
 
 - Custodian project: `arcillis-demo-library`
 - Stack: Python + PySide6 + FastAPI + DeepSeek API + Postgres + Google Sheets API + ChromaDB + Tauri v2 (arc-toolbar)
-- Current state: Demo 2 extraction pipeline and the Demo Bench MCP/chat controls are implemented; the local vision proxy must be started before a live smoke test. ARC Toolbar is a visual prototype with no backend connections.
-- Next: Start the OpenCode proxy and the Demo Bench MCP server, set `DEEPSEEK_API_KEY`, then run the three-image Demo 2 smoke test.
+- Current state: Demo 2 extraction pipeline, MCP tools, and the ARC Toolbar's DeepSeek/MCP chat loop are implemented. The local vision proxy and Gmail OAuth credentials must be configured before live intake/extraction tests.
+- Next: Start the OpenCode proxy and Demo Bench MCP server, set `VITE_DEEPSEEK_API_KEY`, configure Gmail OAuth, then run a staged-image and inbox smoke test.
 
 ## Architecture
 
-- `arc-toolbar/`: Tauri v2 + Vite vanilla JS floating desktop app. Visual prototype with three layout modes (Nokia, Strip, Chat-first), custom title bar, mock state, and admin settings overlay.
+- `arc-toolbar/`: Tauri v2 + Vite vanilla JS floating desktop app. It has three layout modes (Nokia, Strip, Chat-first), a custom title bar, admin settings overlay, and a DeepSeek function-calling chat loop backed by Demo Bench MCP tools.
 - `demo-bench/`: A standalone PySide6 desktop shell for client-facing Arcillis demos. A landing dialog selects a demo before its plugin supplies dockable document intake, source browsing, viewing, and batch-status widgets for Demo 2.
 
 ## File Map
 
 - `arc-toolbar/index.html`: Vite entry point — root HTML shell with layout containers and Tabler Icons CDN.
-- `arc-toolbar/src/main.js`: Layout rendering engine, mock state, admin overlay, keyboard shortcuts, and window controls via Tauri API.
+- `arc-toolbar/src/main.js`: Layout rendering engine, MCP discovery/calls, bounded DeepSeek function-calling chat loop, button-to-chat intents, admin overlay, keyboard shortcuts, and Tauri window controls.
+- `arc-toolbar/src-tauri/capabilities/default.json`: Tauri v2 permissions for drag, minimize, close, resizing, and always-on-top operations.
 - `arc-toolbar/src/style.css`: Dark theme with CSS custom properties, three layout modes, custom titlebar, and admin overlay styles.
 - `arc-toolbar/src-tauri/src/main.rs`: Minimal Tauri binary entry point delegating to lib.
 - `arc-toolbar/src-tauri/src/lib.rs`: Tauri v2 builder with generate_context!().
@@ -23,7 +24,7 @@
 - `demo-bench/main.py`: Application shell, landing dialog launch, dock-layout reset, dark palette, and connection status indicator.
 - `demo-bench/widgets/demo_selector_window.py`: Dark landing dialog and clickable Document Extractor demo card.
 - `demo-bench/plugins/document_extractor.py`: Registers and lays out the Document Extractor intake, viewer, batch status, results table, and export docks.
-- `demo-bench/mcp_server/`: FastAPI server on port 8098 with demo-scoped MCP-style tool discovery/calls, guarded read access, result summaries, and local CSV/Excel exports.
+- `demo-bench/mcp_server/`: FastAPI server on port 8098 with demo-scoped MCP-style tool discovery/calls, guarded read access, result summaries, CSV/Excel exports, Gmail inbox scanning, and staged vision extraction.
 - `demo-bench/widgets/chat_widget.py`: Floating assistant bubble that discovers Demo 2 tools, calls DeepSeek from worker threads, and emits local invoice-highlight requests.
 - `demo-bench/widgets/results_table_widget.py`: Loads extraction records, grades, selectable rows, and field-level comparisons from Postgres.
 - `demo-bench/widgets/export_widget.py`: Exports checked (or confirmed all) extraction records as CSV or formatted Excel.
@@ -31,6 +32,7 @@
 
 ## Last 10 Changes
 
+- 2026-07-16: Wired ARC Toolbar chat and action buttons to DeepSeek function calling with the Demo Bench MCP server. Added schema-scoped Demo 2 DB access, Gmail inbox scanning, staged image/PDF extraction, and Tauri capability permissions.
 - 2026-07-15: Enabled Tauri v2 Cargo features for macOS — `devtools` + `macos-private-api` in Cargo.toml, `macOSPrivateApi: true` in tauri.conf.json, for transparent windows and drag.
 - 2026-07-15: Fixed ARC Toolbar window drag and close on macOS — added `startDragging()` on titlebar mousedown, try/catch on minimize/close, `-webkit-app-region` CSS fallback, and console logging.
 - 2026-07-15: Added ARC Toolbar — a Tauri (v2) + Vite vanilla JS floating desktop app with three layout modes (Nokia, Strip, Chat-first), mock data, custom title bar, and an admin overlay. Visual prototype only; no backend connections.
@@ -40,8 +42,8 @@
 - 2026-07-14: Switched Demo Bench thumbnail and document loading from the PC HTTP file server to locally synced Mac paths, including `mac-local://` uploads, so image viewing works offline once datasets are present.
 - 2026-07-14: Made Demo Bench source-path conversion handle absolute and dataset-relative database paths, URL-encode filenames, log every thumbnail/document request and HTTP result, show source filenames on failures, use smaller five-column thumbnail cells, make File Browser the central workspace, narrow Intake, and guard dock-grid cleanup from null widgets.
 - 2026-07-13: Updated Demo Bench to fetch WSL-hosted source images asynchronously through the PC file server, mark Mac-only intake uploads as intentionally remote-unavailable, and open with a dark Document Extractor landing dialog instead of a selector sidebar.
-- 2026-07-13: Added the dockable PySide6 Demo Bench shell for the Document Extractor demo. It includes a plugin registry, Postgres connection indicator, dark palette, local PDF/image intake, lazy filtered database thumbnail browser, zoomable viewer, and batch-status placeholder.
 
 ## Known Issues
 
-- The local OpenCode vision proxy on port 4096 was unavailable during AC-054 implementation, so live model extraction remains unverified until the proxy is started.
+- The local OpenCode vision proxy on port 4096 must be running and compatible with the configured model before `run_extraction` can process staged files.
+- `scan_inbox` needs a valid `GMAIL_CREDENTIALS_PATH`; its first run opens a local OAuth consent flow and stores `gmail-token.json` beside those credentials.

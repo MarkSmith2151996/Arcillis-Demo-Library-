@@ -1,0 +1,12 @@
+{
+  "identifier": "default",
+  "description": "Default capabilities for ARC Toolbar",
+  "windows": ["main"],
+  "permissions": [
+    "core:window:allow-start-dragging",
+    "core:window:allow-minimize",
+    "core:window:allow-close",
+    "core:window:allow-set-size",
+    "core:window:allow-set-always-on-top"
+  ]
+}

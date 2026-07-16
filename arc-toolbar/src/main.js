@@ -1,5 +1,23 @@
 import { getCurrentWindow, LogicalSize } from "@tauri-apps/api/window";
 
+const DEEPSEEK_API_KEY = import.meta.env.VITE_DEEPSEEK_API_KEY;
+const DEEPSEEK_URL = "https://api.deepseek.com/v1/chat/completions";
+const CHAT_MODEL = "deepseek-v4-flash";
+const CHAT_SYSTEM_PROMPT = `You are an AI assistant embedded in a document extraction toolbar.
+You help users understand extraction results, investigate accuracy issues,
+and take actions like exporting data or reprocessing invoices.
+You have access to tools that let you query the extraction database,
+get detailed results, export data, and control the application.
+Be concise and practical. When a user asks about data, use your query
+tools rather than guessing. When showing numbers, format them clearly.`;
+
+const buttonIntents = {
+  feed: "Scan the inbox for unread invoice attachments and tell me what was found.",
+  run: "Run extraction on the staged inbox files and summarize the results.",
+  push: "Export all clean extraction results to CSV.",
+  ask: "Summarize the current invoice extraction results and flag any accuracy issues.",
+};
+
 const mockConfig = {
   name: "ARC",
   layout: "nokia",
@@ -26,12 +44,52 @@ let state = {
   layout: "nokia",
   statusLog: [...mockConfig.status],
   chatMessages: [...mockConfig.chatHistory],
+  mcpTools: [],
+  chatBusy: false,
 };
 
 const appWindow = getCurrentWindow();
 
 function $(sel) {
   return document.querySelector(sel);
+}
+
+function escapeHtml(value) {
+  const node = document.createElement("span");
+  node.textContent = value;
+  return node.innerHTML;
+}
+
+async function mcpListTools(demo) {
+  const res = await fetch(`${state.serverUrl}/mcp/tools/list`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ demo }),
+  });
+  if (!res.ok) throw new Error(`MCP tool discovery failed (${res.status}).`);
+  return res.json();
+}
+
+async function mcpCallTool(demo, tool, args = {}) {
+  const res = await fetch(`${state.serverUrl}/mcp/tools/call`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ demo, tool, args }),
+  });
+  if (!res.ok) throw new Error(`MCP tool ${tool} failed (${res.status}): ${await res.text()}`);
+  return res.json();
+}
+
+async function discoverMcpTools() {
+  try {
+    const tools = await mcpListTools("document_extractor");
+    if (!Array.isArray(tools)) throw new Error("MCP returned an invalid tool list.");
+    state.mcpTools = tools.map((tool) => ({ type: "function", function: tool }));
+    addStatus("success", `${tools.length} MCP tools connected`);
+  } catch (error) {
+    state.mcpTools = [];
+    addStatus("warning", `MCP tools unavailable: ${error.message}`);
+  }
 }
 
 function renderTitlebar() {
@@ -92,7 +150,7 @@ function renderNokia() {
         ${state.chatMessages
           .map(
             (m) =>
-              `<div class="chat-bubble ${m.role}">${m.text}</div>`
+              `<div class="chat-bubble ${m.role}${m.typing ? " typing" : ""}">${escapeHtml(m.text)}</div>`
           )
           .join("")}
       </div>
@@ -170,7 +228,7 @@ function renderChat() {
       ${state.chatMessages
         .map(
           (m) =>
-            `<div class="chat-bubble ${m.role}">${m.text}</div>`
+              `<div class="chat-bubble ${m.role}${m.typing ? " typing" : ""}">${escapeHtml(m.text)}</div>`
         )
         .join("")}
     </div>
@@ -250,46 +308,99 @@ function handleButtonClick(btnId) {
     el.dispatchEvent(touched);
   }
 
-  const label = mockConfig.buttons.find((b) => b.id === btnId)?.label || btnId.toUpperCase();
-  addStatus("success", `${label} clicked — awaiting implementation`);
-
-  if (btnId === "ask") {
-    setTimeout(() => {
-      const chatInput = $("#chat-text-input");
-      if (chatInput) chatInput.focus();
-    }, 50);
-  }
+  handleChatSend(buttonIntents[btnId] || `Handle the ${btnId} toolbar action.`);
 }
 
-function handleChatSend(text, inputEl) {
-  if (!text.trim()) return;
-  state.chatMessages.push({ role: "user", text: text.trim() });
+async function handleChatSend(text, inputEl) {
+  const message = text.trim();
+  if (!message || state.chatBusy) return;
+  if (!DEEPSEEK_API_KEY) {
+    state.chatMessages.push({ role: "assistant", text: "Set VITE_DEEPSEEK_API_KEY before using ARC chat." });
+    rerenderChats();
+    return;
+  }
+
+  state.chatBusy = true;
+  state.chatMessages.push({ role: "user", text: message });
   if (inputEl) inputEl.value = "";
+  state.chatMessages.push({ role: "assistant", text: "ARC is thinking...", typing: true });
   rerenderChats();
   scrollChatsToBottom();
 
-  setTimeout(() => {
-    state.chatMessages.push({
-      role: "assistant",
-      text: "I'm not connected to a server yet, but when I am, I'll be able to help with that!",
-    });
+  try {
+    const response = await runChatLoop();
+    state.chatMessages.push({ role: "assistant", text: response });
+    addStatus("success", "Response ready");
+  } catch (error) {
+    state.chatMessages.push({ role: "assistant", text: `I could not complete that request: ${error.message}` });
+    addStatus("warning", `Chat error: ${error.message}`);
+  } finally {
+    state.chatMessages = state.chatMessages.filter((entry) => !entry.typing);
+    state.chatBusy = false;
     rerenderChats();
     scrollChatsToBottom();
-  }, 600);
+  }
+}
+
+async function runChatLoop() {
+  const messages = [
+    { role: "system", content: CHAT_SYSTEM_PROMPT },
+    ...state.chatMessages
+      .filter((message) => !message.typing)
+      .slice(-20)
+      .map((message) => ({ role: message.role, content: message.text })),
+  ];
+
+  for (let round = 0; round < 6; round += 1) {
+    const request = { model: CHAT_MODEL, messages };
+    if (state.mcpTools.length) request.tools = state.mcpTools;
+    const res = await fetch(DEEPSEEK_URL, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${DEEPSEEK_API_KEY}`,
+      },
+      body: JSON.stringify(request),
+    });
+    if (!res.ok) throw new Error(`DeepSeek request failed (${res.status}): ${await res.text()}`);
+    const payload = await res.json();
+    const assistantMessage = payload.choices?.[0]?.message;
+    if (!assistantMessage) throw new Error("DeepSeek returned no message.");
+    const toolCalls = assistantMessage.tool_calls || [];
+    if (!toolCalls.length) return assistantMessage.content || "I completed that request.";
+
+    messages.push(assistantMessage);
+    for (const toolCall of toolCalls) {
+      const name = toolCall.function?.name;
+      addStatus("success", `Running ${name}...`);
+      let result;
+      try {
+        result = await mcpCallTool("document_extractor", name, JSON.parse(toolCall.function?.arguments || "{}"));
+      } catch (error) {
+        result = { error: error.message };
+      }
+      messages.push({
+        role: "tool",
+        tool_call_id: toolCall.id,
+        content: JSON.stringify(result),
+      });
+    }
+  }
+  throw new Error("The assistant exceeded the six-round tool-call limit.");
 }
 
 function rerenderChats() {
   const nokiaChat = $("#layout-nokia .nokia-chat");
   if (nokiaChat) {
     nokiaChat.innerHTML = state.chatMessages
-      .map((m) => `<div class="chat-bubble ${m.role}">${m.text}</div>`)
+      .map((m) => `<div class="chat-bubble ${m.role}${m.typing ? " typing" : ""}">${escapeHtml(m.text)}</div>`)
       .join("");
   }
 
   const chatMsgs = $("#chat-messages-container");
   if (chatMsgs) {
     chatMsgs.innerHTML = state.chatMessages
-      .map((m) => `<div class="chat-bubble ${m.role}">${m.text}</div>`)
+      .map((m) => `<div class="chat-bubble ${m.role}${m.typing ? " typing" : ""}">${escapeHtml(m.text)}</div>`)
       .join("");
   }
 }
@@ -426,3 +537,4 @@ function initKeyboardShortcuts() {
 initWindowControls();
 initKeyboardShortcuts();
 renderAll();
+discoverMcpTools();
