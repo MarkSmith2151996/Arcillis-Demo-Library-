@@ -33,6 +33,7 @@
 
 ## Last 10 Changes
 
+- 2026-07-17: Made every Demo Bench MCP database connection set `search_path` to `arcillis` explicitly, removing the fragile URL options fallback that broke psycopg2 URI parsing on macOS.
 - 2026-07-17: Added gspread-backed Google Sheets MCP tools for writing formatted headers, live color-coded extraction rows, arbitrary cells, and reads. The macOS launcher now supplies the service-account credential path.
 - 2026-07-17: Added Mac-runnable MCP startup and four live Excel tools: cell read/write, basic formatting, and color-coded extraction row output. The MCP database URL is now configurable so macOS connects to PC Postgres through Tailscale.
 - 2026-07-16: Added ARC Toolbar's structured component display system. The Nokia screen now defaults to a persisted dashboard with seven DOM-rendered primitives, responsive rows, an in-place chat fallback, intent buttons, loading overlay, animated preset sizing, and runtime admin controls for display configuration.
@@ -42,7 +43,6 @@
 - 2026-07-15: Added ARC Toolbar — a Tauri (v2) + Vite vanilla JS floating desktop app with three layout modes (Nokia, Strip, Chat-first), mock data, custom title bar, and an admin overlay. Visual prototype only; no backend connections.
 - 2026-07-15: Added a workflow navigation bar to the Document Extractor demo. It defaults to Browse, switches tab-specific docks while retaining document and batch context, and makes the floating chat panel a top-level tool window above dock widgets.
 - 2026-07-15: Added a Demo Bench FastAPI MCP server with guarded Demo 2 query, detail, summary, export, and reprocess tools, plus a threaded floating DeepSeek chat widget that can highlight result-table invoices.
-- 2026-07-15: Added Demo Bench Results Table and Export docks. Results display extraction grades, selectable records, source-image navigation, and field-level ground-truth comparisons; checked records export to CSV or Excel.
 
 ## Known Issues
 
