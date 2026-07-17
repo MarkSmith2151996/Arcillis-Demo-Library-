@@ -485,9 +485,25 @@ def sheets_snapshot(
         sh = gc.open_by_key(spreadsheet_id)
         ws = sh.worksheet(sheet_name)
 
+        values = ws.get_all_values()
+        data_cells = [
+            (row_idx, col_idx)
+            for row_idx, row in enumerate(values)
+            for col_idx, value in enumerate(row)
+            if value != ""
+        ]
+        last_data_row = max((row_idx for row_idx, _ in data_cells), default=-1) + 1
+        last_data_column = max((col_idx for _, col_idx in data_cells), default=-1) + 1
+        values = [row[:last_data_column] for row in values[:last_data_row]]
+
         structure = {
             "sheet_name": sheet_name,
-            "dimensions": {"rows": ws.row_count, "columns": ws.col_count},
+            "dimensions": {
+                "rows": last_data_row,
+                "columns": last_data_column,
+                "grid_rows": ws.row_count,
+                "grid_columns": ws.col_count,
+            },
             "frozen": {"rows": ws.frozen_row_count or 0, "columns": ws.frozen_col_count or 0},
             "hidden_columns": [],
             "hidden_rows": [],
@@ -515,7 +531,6 @@ def sheets_snapshot(
         if not include_values:
             return result
 
-        values = ws.get_all_values()
         if not values:
             result["headers"] = []
             result["column_summary"] = []
@@ -526,8 +541,10 @@ def sheets_snapshot(
             return result
 
         headers = list(values[0])
-        while len(headers) < ws.col_count:
+        while len(headers) < last_data_column:
             headers.append("")
+        while headers and headers[-1] == "":
+            headers.pop()
         data_rows = values[1:] if len(values) > 1 else []
 
         result["headers"] = headers
@@ -535,9 +552,9 @@ def sheets_snapshot(
         column_summary: list[dict[str, Any]] = []
         issues: list[str] = []
 
-        for col_idx in range(ws.col_count):
+        for col_idx in range(last_data_column):
             col_letter = _column_letter(col_idx)
-            header = headers[col_idx]
+            header = headers[col_idx] if col_idx < len(headers) else ""
             col_values = [
                 row[col_idx] if col_idx < len(row) else "" for row in data_rows
             ]
@@ -621,7 +638,11 @@ def sheets_snapshot(
                 for s in fmt_json.get("sheets", []):
                     for grid_data in s.get("data", []):
                         for row_idx, row_data in enumerate(grid_data.get("rowData", [])):
+                            if row_idx >= last_data_row:
+                                break
                             for col_idx, cell_data in enumerate(row_data.get("values", [])):
+                                if col_idx >= last_data_column:
+                                    break
                                 fmt = cell_data.get("userEnteredFormat", {})
                                 if not fmt:
                                     continue
