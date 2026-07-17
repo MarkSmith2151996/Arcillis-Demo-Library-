@@ -25,6 +25,7 @@ DATABASE_URL = os.environ.get(
     "postgresql://autocore_writer:autocore_pipeline_2026@localhost:5432/hive?options=-csearch_path%3Darcillis",
 )
 EXPORT_DIR = Path(os.environ.get("DEMO_BENCH_EXPORT_DIR", "/tmp/demo-bench-exports"))
+GOOGLE_SHEETS_CREDENTIALS = os.environ.get("GOOGLE_SHEETS_CREDENTIALS", "")
 INBOX_STAGING_DIR = Path(os.environ.get("INBOX_STAGING_DIR", "/tmp/arc-inbox-staging"))
 FORBIDDEN_SQL = re.compile(r"\b(?:INSERT|UPDATE|DELETE|DROP|ALTER|CREATE|TRUNCATE)\b", re.IGNORECASE)
 SOURCE_REFERENCE = re.compile(r"\b(?:FROM|JOIN)\s+([^\s,(;]+)", re.IGNORECASE)
@@ -354,6 +355,97 @@ def write_extraction_row(workbook: str, sheet: str, row_number: int, extraction_
             cell.font.color = (34, 197, 94) if value >= 90 else (234, 179, 8) if value >= 70 else (239, 68, 68)
 
     return {"status": "written", "workbook": workbook, "sheet": sheet, "row": row_number}
+
+
+
+# ---------------------------------------------------------------------------
+# Google Sheets tools (gspread + service account)
+# ---------------------------------------------------------------------------
+
+def _sheets_client():
+    """Return an authorized gspread client using the service account JSON."""
+    import gspread
+
+    if not GOOGLE_SHEETS_CREDENTIALS:
+        raise RuntimeError("GOOGLE_SHEETS_CREDENTIALS env var is not set.")
+    return gspread.service_account(filename=GOOGLE_SHEETS_CREDENTIALS)
+
+
+def sheets_write_headers(spreadsheet_id: str, sheet_name: str = "Sheet1") -> dict[str, Any]:
+    """Write the standard extraction header row and apply bold formatting."""
+    try:
+        gc = _sheets_client()
+        sh = gc.open_by_key(spreadsheet_id)
+        ws = sh.worksheet(sheet_name)
+        headers = ["Invoice ID", "Filename", "Vendor", "Invoice Number", "Date", "Total", "Accuracy", "Status"]
+        ws.update("A1", [headers], value_input_option="RAW")
+        ws.format("A1:H1", {"textFormat": {"bold": True}})
+        return {"status": "headers_written", "spreadsheet_id": spreadsheet_id, "columns": len(headers)}
+    except Exception as error:
+        return {"error": str(error)}
+
+
+def sheets_write_extraction_row(
+    spreadsheet_id: str,
+    row_number: int,
+    extraction_data: dict[str, Any],
+    sheet_name: str = "Sheet1",
+) -> dict[str, Any]:
+    """Write one extraction result as a color-coded row in a Google Sheet."""
+    try:
+        gc = _sheets_client()
+        sh = gc.open_by_key(spreadsheet_id)
+        ws = sh.worksheet(sheet_name)
+        fields = ["invoice_id", "filename", "vendor", "invoice_number", "date", "total", "accuracy", "status"]
+        row = [extraction_data.get(f, "") for f in fields]
+        ws.update(f"A{row_number}", [row], value_input_option="RAW")
+
+        accuracy = extraction_data.get("accuracy")
+        if isinstance(accuracy, (int, float)):
+            if accuracy >= 95:
+                bg = {"red": 0.83, "green": 0.93, "blue": 0.85}
+            elif accuracy >= 80:
+                bg = {"red": 1.0, "green": 0.95, "blue": 0.8}
+            else:
+                bg = {"red": 0.97, "green": 0.84, "blue": 0.85}
+            ws.format(f"G{row_number}", {"backgroundColor": bg})
+        return {"status": "row_written", "spreadsheet_id": spreadsheet_id, "row": row_number}
+    except Exception as error:
+        return {"error": str(error)}
+
+
+def sheets_write_cells(
+    spreadsheet_id: str,
+    range_str: str,
+    values: list[Any],
+    sheet_name: str = "Sheet1",
+) -> dict[str, Any]:
+    """Write a value, row, or grid to an arbitrary range in a Google Sheet."""
+    try:
+        gc = _sheets_client()
+        sh = gc.open_by_key(spreadsheet_id)
+        ws = sh.worksheet(sheet_name)
+        data = values if isinstance(values[0], list) else [values]
+        ws.update(range_str, data, value_input_option="RAW")
+        return {"status": "written", "spreadsheet_id": spreadsheet_id, "range": range_str}
+    except Exception as error:
+        return {"error": str(error)}
+
+
+def sheets_read_cells(
+    spreadsheet_id: str,
+    range_str: str,
+    sheet_name: str = "Sheet1",
+) -> dict[str, Any]:
+    """Read values from a range in a Google Sheet."""
+    try:
+        gc = _sheets_client()
+        sh = gc.open_by_key(spreadsheet_id)
+        ws = sh.worksheet(sheet_name)
+        values = ws.get(range_str)
+        return {"values": values, "spreadsheet_id": spreadsheet_id, "range": range_str}
+    except Exception as error:
+        return {"error": str(error)}
 
 
 def reprocess_invoices(invoice_ids: list[int]) -> dict[str, Any]:
