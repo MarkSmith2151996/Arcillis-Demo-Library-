@@ -15,12 +15,16 @@ from pydantic import BaseModel
 from demo2_tools import (
     export_to_csv,
     export_to_excel,
+    format_cells,
     get_invoice_detail,
     query_extractions,
+    read_cells,
     reprocess_invoices,
     run_extraction,
     scan_inbox,
     summarize_batch,
+    write_cells,
+    write_extraction_row,
 )
 
 
@@ -51,6 +55,10 @@ TOOL_REGISTRY: dict[str, list[Tool]] = {
         Tool("reprocess_invoices", "Queue invoices for a future extraction rerun.", _object({"invoice_ids": {"type": "array", "items": {"type": "integer"}}}, ["invoice_ids"]), reprocess_invoices),
         Tool("scan_inbox", "Download unread PDF and image attachments from the configured Gmail inbox.", _object({}), scan_inbox),
         Tool("run_extraction", "Extract staged invoice images or PDFs and save the results.", _object({"source_dir": {"type": ["string", "null"], "description": "Optional staged attachment directory."}}), run_extraction),
+        Tool("write_cells", "Write a value, row, or grid to a range in an already-open Excel workbook.", _object({"workbook": {"type": "string", "description": "Open workbook name, such as extractions.xlsx."}, "sheet": {"type": "string"}, "range": {"type": "string", "description": "Excel cell or range, such as A2 or A2:F2."}, "values": {"type": "array", "description": "Value list, row, or nested grid to write."}}, ["workbook", "sheet", "range", "values"]), write_cells),
+        Tool("read_cells", "Read values from a range in an already-open Excel workbook.", _object({"workbook": {"type": "string"}, "sheet": {"type": "string"}, "range": {"type": "string"}}, ["workbook", "sheet", "range"]), read_cells),
+        Tool("format_cells", "Apply bold font and/or a hexadecimal font color to cells in an open Excel workbook.", _object({"workbook": {"type": "string"}, "sheet": {"type": "string"}, "range": {"type": "string"}, "bold": {"type": "boolean", "default": False}, "color": {"type": ["string", "null"], "description": "Optional six-digit hex color, such as #22C55E."}}, ["workbook", "sheet", "range"]), format_cells),
+        Tool("write_extraction_row", "Write one extraction result as a color-coded row in an open Excel workbook; use this for live row-by-row output.", _object({"workbook": {"type": "string"}, "sheet": {"type": "string"}, "row_number": {"type": "integer", "minimum": 1}, "extraction_data": {"type": "object", "description": "Extraction fields: invoice_id, vendor, invoice_number, date, total, accuracy, and status."}}, ["workbook", "sheet", "row_number", "extraction_data"]), write_extraction_row),
     ],
 }
 

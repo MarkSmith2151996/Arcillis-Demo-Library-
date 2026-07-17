@@ -20,7 +20,10 @@ from openpyxl.styles import Font, PatternFill
 
 
 # Percent-encode the equals sign so psycopg2/libpq parses the search-path option.
-DATABASE_URL = "postgresql://autocore_writer:autocore_pipeline_2026@localhost:5432/hive?options=-csearch_path%3Darcillis"
+DATABASE_URL = os.environ.get(
+    "DATABASE_URL",
+    "postgresql://autocore_writer:autocore_pipeline_2026@localhost:5432/hive?options=-csearch_path%3Darcillis",
+)
 EXPORT_DIR = Path(os.environ.get("DEMO_BENCH_EXPORT_DIR", "/tmp/demo-bench-exports"))
 INBOX_STAGING_DIR = Path(os.environ.get("INBOX_STAGING_DIR", "/tmp/arc-inbox-staging"))
 FORBIDDEN_SQL = re.compile(r"\b(?:INSERT|UPDATE|DELETE|DROP|ALTER|CREATE|TRUNCATE)\b", re.IGNORECASE)
@@ -290,6 +293,67 @@ def export_to_excel(invoice_ids: list[int] | None = None, filename: str = "extra
         return {"filepath": str(output), "row_count": len(rows)}
     except Exception as error:
         return {"error": str(error)}
+
+
+def write_cells(workbook: str, sheet: str, range: str, values: list[Any]) -> dict[str, Any]:
+    """Write a value, row, or grid to a range in an open Excel workbook."""
+    import xlwings as xw
+
+    wb = xw.books[workbook]
+    ws = wb.sheets[sheet]
+    ws.range(range).value = values
+    return {"status": "written", "workbook": workbook, "sheet": sheet, "range": range}
+
+
+def read_cells(workbook: str, sheet: str, range: str) -> dict[str, Any]:
+    """Read values from a range in an open Excel workbook."""
+    import xlwings as xw
+
+    wb = xw.books[workbook]
+    ws = wb.sheets[sheet]
+    return {"values": ws.range(range).value, "workbook": workbook, "sheet": sheet, "range": range}
+
+
+def format_cells(
+    workbook: str,
+    sheet: str,
+    range: str,
+    bold: bool = False,
+    color: str | None = None,
+) -> dict[str, Any]:
+    """Apply basic font formatting to a range in an open Excel workbook."""
+    import xlwings as xw
+
+    wb = xw.books[workbook]
+    ws = wb.sheets[sheet]
+    cell_range = ws.range(range)
+    if bold:
+        cell_range.font.bold = True
+    if color:
+        hex_color = color.lstrip("#")
+        if not re.fullmatch(r"[0-9A-Fa-f]{6}", hex_color):
+            raise ValueError("color must be a six-digit hexadecimal value, such as #22C55E.")
+        cell_range.font.color = tuple(int(hex_color[index : index + 2], 16) for index in (0, 2, 4))
+    return {"status": "formatted", "workbook": workbook, "sheet": sheet, "range": range}
+
+
+def write_extraction_row(workbook: str, sheet: str, row_number: int, extraction_data: dict[str, Any]) -> dict[str, Any]:
+    """Write one extraction result to Excel with an accuracy color indicator."""
+    import xlwings as xw
+
+    wb = xw.books[workbook]
+    ws = wb.sheets[sheet]
+    columns = ["A", "B", "C", "D", "E", "F", "G"]
+    fields = ["invoice_id", "vendor", "invoice_number", "date", "total", "accuracy", "status"]
+
+    for column, field in zip(columns, fields, strict=True):
+        cell = ws.range(f"{column}{row_number}")
+        value = extraction_data.get(field, "")
+        cell.value = value
+        if field == "accuracy" and isinstance(value, (int, float)):
+            cell.font.color = (34, 197, 94) if value >= 90 else (234, 179, 8) if value >= 70 else (239, 68, 68)
+
+    return {"status": "written", "workbook": workbook, "sheet": sheet, "row": row_number}
 
 
 def reprocess_invoices(invoice_ids: list[int]) -> dict[str, Any]:
