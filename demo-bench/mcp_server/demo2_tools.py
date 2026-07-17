@@ -663,6 +663,323 @@ def sheets_snapshot(
         return {"error": str(error)}
 
 
+def _a1_to_grid_range(range_str: str, sheet_id: int) -> dict[str, int]:
+    """Convert an A1 cell, row, or column range to a Sheets API GridRange."""
+    reference = range_str.strip().replace("$", "")
+    if "!" in reference:
+        reference = reference.rsplit("!", 1)[1]
+    match = re.fullmatch(r"([A-Za-z]*)(\d*)\s*(?::\s*([A-Za-z]*)(\d*))?", reference)
+    if not match or not any(match.groups()):
+        raise ValueError(f"Invalid A1 range: {range_str}")
+
+    start_col, start_row, end_col, end_row = match.groups()
+    if (start_col and not end_row and not end_col and not start_row) or (start_row and not end_col and not end_row and not start_col):
+        raise ValueError(f"Invalid A1 range: {range_str}")
+
+    def column_index(column: str) -> int:
+        value = 0
+        for letter in column.upper():
+            value = value * 26 + ord(letter) - ord("A") + 1
+        return value - 1
+
+    grid_range: dict[str, int] = {"sheetId": sheet_id}
+    if start_row:
+        grid_range["startRowIndex"] = int(start_row) - 1
+        grid_range["endRowIndex"] = int(end_row or start_row)
+    if start_col:
+        grid_range["startColumnIndex"] = column_index(start_col)
+        grid_range["endColumnIndex"] = column_index(end_col or start_col) + 1
+    return grid_range
+
+
+def _hex_to_rgb(color: str) -> dict[str, float]:
+    """Convert a six-digit hexadecimal color to the Sheets RGB representation."""
+    hex_color = color.lstrip("#")
+    if not re.fullmatch(r"[0-9A-Fa-f]{6}", hex_color):
+        raise ValueError("Colors must be six-digit hexadecimal values, such as #22C55E.")
+    return {
+        "red": int(hex_color[0:2], 16) / 255,
+        "green": int(hex_color[2:4], 16) / 255,
+        "blue": int(hex_color[4:6], 16) / 255,
+    }
+
+
+def sheets_format_cells(
+    spreadsheet_id: str,
+    range_str: str,
+    sheet_name: str = "Sheet1",
+    bold: bool | None = None,
+    italic: bool | None = None,
+    font_color: str | None = None,
+    background_color: str | None = None,
+    font_size: int | None = None,
+    horizontal_alignment: str | None = None,
+    number_format: str | None = None,
+    borders: dict[str, Any] | None = None,
+    column_width: int | None = None,
+) -> dict[str, Any]:
+    """Apply text, number, border, and column-width formatting to a Sheets range."""
+    try:
+        gc = _sheets_client()
+        sh = gc.open_by_key(spreadsheet_id)
+        ws = sh.worksheet(sheet_name)
+        format_dict: dict[str, Any] = {}
+        text_format: dict[str, Any] = {}
+        applied: list[str] = []
+        if bold is not None:
+            text_format["bold"] = bold
+            applied.append("bold")
+        if italic is not None:
+            text_format["italic"] = italic
+            applied.append("italic")
+        if font_color:
+            text_format["foregroundColor"] = _hex_to_rgb(font_color)
+            applied.append("font_color")
+        if text_format:
+            format_dict["textFormat"] = text_format
+        if background_color:
+            format_dict["backgroundColor"] = _hex_to_rgb(background_color)
+            applied.append("background_color")
+        if font_size is not None:
+            format_dict.setdefault("textFormat", {})["fontSize"] = font_size
+            applied.append("font_size")
+        if horizontal_alignment:
+            alignment = horizontal_alignment.upper()
+            if alignment not in {"LEFT", "CENTER", "RIGHT"}:
+                raise ValueError("horizontal_alignment must be LEFT, CENTER, or RIGHT.")
+            format_dict["horizontalAlignment"] = alignment
+            applied.append("horizontal_alignment")
+        if number_format:
+            format_dict["numberFormat"] = {"type": "NUMBER", "pattern": number_format}
+            applied.append("number_format")
+        if format_dict:
+            ws.format(range_str, format_dict)
+
+        requests: list[dict[str, Any]] = []
+        grid_range = _a1_to_grid_range(range_str, ws.id)
+        if borders:
+            style = borders.get("style", "SOLID")
+            border = {"style": style, "colorStyle": {"rgbColor": {"red": 0, "green": 0, "blue": 0}}}
+            border_request: dict[str, Any] = {"range": grid_range}
+            for side in ("top", "bottom", "left", "right"):
+                if borders.get(side):
+                    border_request[side] = border
+            if len(border_request) == 1:
+                raise ValueError("borders must enable at least one side.")
+            requests.append({"updateBorders": border_request})
+            applied.append("borders")
+        if column_width is not None:
+            if column_width < 1 or "startColumnIndex" not in grid_range:
+                raise ValueError("column_width requires a column-containing range and a positive pixel width.")
+            requests.append({
+                "updateDimensionProperties": {
+                    "range": {
+                        "sheetId": ws.id,
+                        "dimension": "COLUMNS",
+                        "startIndex": grid_range["startColumnIndex"],
+                        "endIndex": grid_range["endColumnIndex"],
+                    },
+                    "properties": {"pixelSize": column_width},
+                    "fields": "pixelSize",
+                }
+            })
+            applied.append("column_width")
+        if requests:
+            sh.batch_update({"requests": requests})
+        return {"status": "formatted", "spreadsheet_id": spreadsheet_id, "range": range_str, "applied": applied}
+    except Exception as error:
+        return {"error": str(error)}
+
+
+def sheets_calculate(spreadsheet_id: str, formula: str, sheet_name: str = "Sheet1") -> dict[str, Any]:
+    """Evaluate a formula by writing it to a temporary cell in the selected sheet."""
+    try:
+        gc = _sheets_client()
+        sh = gc.open_by_key(spreadsheet_id)
+        ws = sh.worksheet(sheet_name)
+        formula = formula if formula.startswith("=") else f"={formula}"
+        temp_cell = "Z9999"
+        ws.update_acell(temp_cell, formula)
+        try:
+            time.sleep(0.5)
+            result = ws.acell(temp_cell, value_render_option="UNFORMATTED_VALUE").value
+        finally:
+            ws.update_acell(temp_cell, "")
+        return {"formula": formula, "result": result}
+    except Exception as error:
+        return {"error": str(error)}
+
+
+def sheets_append(spreadsheet_id: str, values: list[Any], sheet_name: str = "Sheet1") -> dict[str, Any]:
+    """Append one row or a grid of rows to a Google Sheet."""
+    try:
+        if not values:
+            raise ValueError("values must contain at least one row.")
+        rows = values if isinstance(values[0], list) else [values]
+        gc = _sheets_client()
+        sh = gc.open_by_key(spreadsheet_id)
+        sh.worksheet(sheet_name).append_rows(rows, value_input_option="RAW")
+        return {"status": "appended", "rows_added": len(rows), "spreadsheet_id": spreadsheet_id}
+    except Exception as error:
+        return {"error": str(error)}
+
+
+def sheets_clear(spreadsheet_id: str, range_str: str, sheet_name: str = "Sheet1") -> dict[str, Any]:
+    """Clear values from a range without removing its rows or columns."""
+    try:
+        gc = _sheets_client()
+        sh = gc.open_by_key(spreadsheet_id)
+        sh.worksheet(sheet_name).batch_clear([range_str])
+        return {"status": "cleared", "range": range_str, "spreadsheet_id": spreadsheet_id}
+    except Exception as error:
+        return {"error": str(error)}
+
+
+def sheets_manage(
+    spreadsheet_id: str,
+    operation: str,
+    sheet_name: str = "Sheet1",
+    row_index: int | None = None,
+    num_rows: int = 1,
+    new_name: str | None = None,
+) -> dict[str, Any]:
+    """Insert or delete rows, or add, rename, and delete worksheet tabs."""
+    try:
+        gc = _sheets_client()
+        sh = gc.open_by_key(spreadsheet_id)
+        if operation == "add_sheet":
+            if not new_name:
+                raise ValueError("new_name is required for add_sheet.")
+            ws = sh.add_worksheet(title=new_name, rows=1000, cols=26)
+            return {"status": "done", "operation": operation, "spreadsheet_id": spreadsheet_id, "sheet_name": ws.title}
+        ws = sh.worksheet(sheet_name)
+        if operation == "insert_rows":
+            if row_index is None or row_index < 1 or num_rows < 1:
+                raise ValueError("insert_rows requires a positive row_index and num_rows.")
+            ws.insert_rows(values=[[""] * ws.col_count] * num_rows, row=row_index)
+        elif operation == "delete_rows":
+            if row_index is None or row_index < 1 or num_rows < 1:
+                raise ValueError("delete_rows requires a positive row_index and num_rows.")
+            ws.delete_rows(row_index, row_index + num_rows - 1)
+        elif operation == "rename_sheet":
+            if not new_name:
+                raise ValueError("new_name is required for rename_sheet.")
+            ws.update_title(new_name)
+        elif operation == "delete_sheet":
+            sh.del_worksheet(ws)
+        else:
+            raise ValueError("operation must be insert_rows, delete_rows, add_sheet, rename_sheet, or delete_sheet.")
+        return {"status": "done", "operation": operation, "spreadsheet_id": spreadsheet_id}
+    except Exception as error:
+        return {"error": str(error)}
+
+
+def sheets_merge(
+    spreadsheet_id: str,
+    range_str: str,
+    sheet_name: str = "Sheet1",
+    merge_type: str = "MERGE_ALL",
+) -> dict[str, Any]:
+    """Merge or unmerge a range of cells."""
+    try:
+        gc = _sheets_client()
+        sh = gc.open_by_key(spreadsheet_id)
+        ws = sh.worksheet(sheet_name)
+        if merge_type == "UNMERGE":
+            ws.unmerge_cells(range_str)
+            status = "unmerged"
+        else:
+            if merge_type not in {"MERGE_ALL", "MERGE_COLUMNS", "MERGE_ROWS"}:
+                raise ValueError("merge_type must be MERGE_ALL, MERGE_COLUMNS, MERGE_ROWS, or UNMERGE.")
+            ws.merge_cells(range_str, merge_type=merge_type)
+            status = "merged"
+        return {"status": status, "range": range_str, "spreadsheet_id": spreadsheet_id}
+    except Exception as error:
+        return {"error": str(error)}
+
+
+def sheets_find(
+    spreadsheet_id: str, query: str, sheet_name: str = "Sheet1", case_sensitive: bool = False
+) -> dict[str, Any]:
+    """Find all matching cells in a Google Sheet."""
+    try:
+        gc = _sheets_client()
+        sh = gc.open_by_key(spreadsheet_id)
+        ws = sh.worksheet(sheet_name)
+        pattern: str | re.Pattern[str] = query if case_sensitive else re.compile(re.escape(query), re.IGNORECASE)
+        results = ws.findall(pattern)
+        matches = [{"cell": cell.label, "value": cell.value, "row": cell.row, "col": cell.col} for cell in results]
+        return {"matches": matches, "count": len(matches), "spreadsheet_id": spreadsheet_id}
+    except Exception as error:
+        return {"error": str(error)}
+
+
+def sheets_conditional_format(
+    spreadsheet_id: str,
+    range_str: str,
+    rule_type: str,
+    values: list[Any],
+    format: dict[str, Any],
+    sheet_name: str = "Sheet1",
+) -> dict[str, Any]:
+    """Add a raw Sheets API conditional-format rule to a range."""
+    try:
+        gc = _sheets_client()
+        sh = gc.open_by_key(spreadsheet_id)
+        ws = sh.worksheet(sheet_name)
+        sheets_format: dict[str, Any] = {}
+        if format.get("background_color"):
+            sheets_format["backgroundColor"] = _hex_to_rgb(format["background_color"])
+        text_format: dict[str, Any] = {}
+        if format.get("font_color"):
+            text_format["foregroundColor"] = _hex_to_rgb(format["font_color"])
+        if "bold" in format:
+            text_format["bold"] = bool(format["bold"])
+        if text_format:
+            sheets_format["textFormat"] = text_format
+        if not sheets_format:
+            raise ValueError("format must include background_color, font_color, or bold.")
+        request = {"addConditionalFormatRule": {"rule": {
+            "ranges": [_a1_to_grid_range(range_str, ws.id)],
+            "booleanRule": {
+                "condition": {"type": rule_type, "values": [{"userEnteredValue": str(value)} for value in values]},
+                "format": sheets_format,
+            },
+        }, "index": 0}}
+        sh.batch_update({"requests": [request]})
+        return {"status": "rule_added", "range": range_str, "rule_type": rule_type, "spreadsheet_id": spreadsheet_id}
+    except Exception as error:
+        return {"error": str(error)}
+
+
+def sheets_validate(
+    spreadsheet_id: str,
+    range_str: str,
+    validation_type: str,
+    values: list[Any] | None = None,
+    sheet_name: str = "Sheet1",
+    strict: bool = True,
+    show_dropdown: bool = True,
+) -> dict[str, Any]:
+    """Set dropdown, checkbox, number, or formula validation on a Sheets range."""
+    try:
+        gc = _sheets_client()
+        sh = gc.open_by_key(spreadsheet_id)
+        ws = sh.worksheet(sheet_name)
+        condition: dict[str, Any] = {"type": "BOOLEAN" if validation_type == "CHECKBOX" else validation_type}
+        if values:
+            condition["values"] = [{"userEnteredValue": str(value)} for value in values]
+        request = {"setDataValidation": {"range": _a1_to_grid_range(range_str, ws.id), "rule": {
+            "condition": condition,
+            "strict": strict,
+            "showCustomUi": show_dropdown,
+        }}}
+        sh.batch_update({"requests": [request]})
+        return {"status": "validation_set", "range": range_str, "type": validation_type, "spreadsheet_id": spreadsheet_id}
+    except Exception as error:
+        return {"error": str(error)}
+
+
 def reprocess_invoices(invoice_ids: list[int]) -> dict[str, Any]:
     """Queue a future extraction rerun without invoking the extraction engine yet."""
     logging.getLogger(__name__).info("Reprocessing requested for invoices: %s", invoice_ids)
