@@ -19,10 +19,9 @@ from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill
 
 
-# Percent-encode the equals sign so psycopg2/libpq parses the search-path option.
 DATABASE_URL = os.environ.get(
     "DATABASE_URL",
-    "postgresql://autocore_writer:autocore_pipeline_2026@localhost:5432/hive?options=-csearch_path%3Darcillis",
+    "postgresql://autocore_writer:autocore_pipeline_2026@localhost:5432/hive",
 )
 EXPORT_DIR = Path(os.environ.get("DEMO_BENCH_EXPORT_DIR", "/tmp/demo-bench-exports"))
 GOOGLE_SHEETS_CREDENTIALS = os.environ.get("GOOGLE_SHEETS_CREDENTIALS", "")
@@ -38,8 +37,11 @@ DEMO2_TABLE = re.compile(r"^demo2_[A-Za-z0-9_]+$")
 
 
 def _connection():
-    """Create a short-lived connection to the local WSL Postgres instance."""
-    return psycopg2.connect(DATABASE_URL, connect_timeout=5)
+    """Create a short-lived connection to Postgres and set the arcillis schema."""
+    conn = psycopg2.connect(DATABASE_URL, connect_timeout=5)
+    with conn.cursor() as cur:
+        cur.execute("SET search_path TO arcillis")
+    return conn
 
 
 def _as_dict(value: Any) -> dict[str, Any]:
