@@ -15,7 +15,8 @@
 ## File Map
 
 - `arc-toolbar/index.html`: Vite entry point — root HTML shell with layout containers and Tabler Icons CDN.
-- `arc-toolbar/src/main.js`: Layout rendering engine, MCP discovery/calls, bounded DeepSeek function-calling chat loop, button-to-chat intents, admin overlay, keyboard shortcuts, and Tauri window controls.
+- `arc-toolbar/src/main.js`: Toolbar state and layout engine, MCP/DeepSeek chat loop, structured display response parsing, display persistence, window sizing, admin settings, and Tauri window controls.
+- `arc-toolbar/src/components.js`: DOM-only renderer for the number, text, table, status, progress, button, and divider display primitives.
 - `arc-toolbar/src-tauri/capabilities/default.json`: Tauri v2 permissions for drag, minimize, close, resizing, and always-on-top operations.
 - `arc-toolbar/src/style.css`: Dark theme with CSS custom properties, three layout modes, custom titlebar, and admin overlay styles.
 - `arc-toolbar/src-tauri/src/main.rs`: Minimal Tauri binary entry point delegating to lib.
@@ -32,6 +33,7 @@
 
 ## Last 10 Changes
 
+- 2026-07-16: Added ARC Toolbar's structured component display system. The Nokia screen now defaults to a persisted dashboard with seven DOM-rendered primitives, responsive rows, an in-place chat fallback, intent buttons, loading overlay, animated preset sizing, and runtime admin controls for display configuration.
 - 2026-07-16: Wired ARC Toolbar chat and action buttons to DeepSeek function calling with the Demo Bench MCP server. Added schema-scoped Demo 2 DB access, Gmail inbox scanning, staged image/PDF extraction, and Tauri capability permissions.
 - 2026-07-15: Enabled Tauri v2 Cargo features for macOS — `devtools` + `macos-private-api` in Cargo.toml, `macOSPrivateApi: true` in tauri.conf.json, for transparent windows and drag.
 - 2026-07-15: Fixed ARC Toolbar window drag and close on macOS — added `startDragging()` on titlebar mousedown, try/catch on minimize/close, `-webkit-app-region` CSS fallback, and console logging.
@@ -41,7 +43,6 @@
 - 2026-07-15: Added Demo Bench Results Table and Export docks. Results display extraction grades, selectable records, source-image navigation, and field-level ground-truth comparisons; checked records export to CSV or Excel.
 - 2026-07-14: Switched Demo Bench thumbnail and document loading from the PC HTTP file server to locally synced Mac paths, including `mac-local://` uploads, so image viewing works offline once datasets are present.
 - 2026-07-14: Made Demo Bench source-path conversion handle absolute and dataset-relative database paths, URL-encode filenames, log every thumbnail/document request and HTTP result, show source filenames on failures, use smaller five-column thumbnail cells, make File Browser the central workspace, narrow Intake, and guard dock-grid cleanup from null widgets.
-- 2026-07-13: Updated Demo Bench to fetch WSL-hosted source images asynchronously through the PC file server, mark Mac-only intake uploads as intentionally remote-unavailable, and open with a dark Document Extractor landing dialog instead of a selector sidebar.
 
 ## Known Issues
 

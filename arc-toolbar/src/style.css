@@ -124,10 +124,223 @@ body {
   padding: 14px;
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  overflow-y: auto;
+  gap: 8px;
+  overflow: hidden;
   min-height: 0;
 }
+
+.screen-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.screen-status {
+  overflow: hidden;
+  color: var(--text-muted);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.screen-chat-toggle {
+  width: 28px;
+  height: 28px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.screen-chat-toggle:hover {
+  background: var(--bg-button);
+  color: var(--text-primary);
+}
+
+.screen-content {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+/* The display is intentionally low-chrome: spacing and hierarchy do the work. */
+.component-display {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  animation: display-enter 0.2s ease-out;
+}
+
+.display-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.display-component {
+  min-width: min(100%, 132px);
+  color: var(--text-primary);
+  overflow: hidden;
+}
+
+.display-number {
+  padding: 8px 4px;
+}
+
+.display-number-value {
+  color: var(--component-color);
+  font-size: clamp(25px, 9vw, 42px);
+  font-weight: 750;
+  letter-spacing: -0.05em;
+  line-height: 1;
+}
+
+.display-label {
+  color: var(--text-muted);
+  font-size: 10px;
+  font-weight: 650;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.display-number .display-label {
+  margin-top: 5px;
+}
+
+.display-text-value,
+.display-status-value {
+  font-size: 14px;
+  line-height: 1.4;
+}
+
+.display-text .display-label,
+.display-progress .display-label {
+  margin-bottom: 4px;
+}
+
+.display-table {
+  overflow-x: auto;
+}
+
+.display-table table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 11px;
+  text-align: left;
+}
+
+.display-table th {
+  color: var(--text-muted);
+  font-size: 9px;
+  font-weight: 650;
+  letter-spacing: 0.05em;
+  padding: 5px 7px;
+  text-transform: uppercase;
+}
+
+.display-table td {
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
+  padding: 7px;
+  white-space: nowrap;
+}
+
+.display-table tbody tr:nth-child(odd) {
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.display-status {
+  align-items: center;
+  display: flex;
+  gap: 8px;
+}
+
+.display-status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--component-color);
+  box-shadow: 0 0 10px color-mix(in srgb, var(--component-color) 50%, transparent);
+  flex-shrink: 0;
+}
+
+.display-status-content .display-label {
+  margin-bottom: 1px;
+}
+
+.display-progress-track {
+  height: 6px;
+  overflow: hidden;
+  border-radius: 99px;
+  background: var(--bg-button);
+}
+
+.display-progress-fill {
+  height: 100%;
+  border-radius: inherit;
+  background: var(--component-color);
+  transition: width 0.3s ease;
+}
+
+.display-progress-caption {
+  margin-top: 4px;
+  color: var(--text-muted);
+  font-size: 10px;
+}
+
+.display-action-button {
+  width: 100%;
+  padding: 9px 11px;
+  border: 1px solid color-mix(in srgb, var(--component-color) 45%, transparent);
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--component-color) 12%, transparent);
+  color: var(--component-color);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 650;
+  transition: background 0.15s, transform 0.15s;
+}
+
+.display-action-button:hover {
+  background: color-mix(in srgb, var(--component-color) 21%, transparent);
+}
+
+.display-action-button:active {
+  transform: scale(0.98);
+}
+
+.display-divider hr {
+  border: 0;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.display-loading {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  background: rgba(13, 17, 23, 0.66);
+  backdrop-filter: blur(2px);
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+.loading-spinner {
+  width: 13px;
+  height: 13px;
+  border: 2px solid var(--bg-button-hover);
+  border-top-color: var(--accent-blue);
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+}
+
+@keyframes display-enter { from { opacity: 0; transform: translateY(3px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes spin { to { transform: rotate(360deg); } }
 
 .nokia-status {
   display: flex;
@@ -167,6 +380,32 @@ body {
   gap: 8px;
   overflow-y: auto;
   min-height: 0;
+}
+
+.nokia-chat-input-row {
+  display: flex;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.nokia-chat-input-row input {
+  min-width: 0;
+  flex: 1;
+  padding: 7px 8px;
+  border: 1px solid var(--bg-button);
+  border-radius: 6px;
+  outline: none;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+}
+
+.nokia-chat-input-row button {
+  width: 32px;
+  border: 0;
+  border-radius: 6px;
+  background: var(--accent-blue);
+  color: #fff;
+  cursor: pointer;
 }
 
 .chat-bubble {
@@ -214,6 +453,10 @@ body {
   font-size: 11px;
   font-weight: 700;
   letter-spacing: 0.04em;
+}
+
+.nokia-btn span:last-child {
+  display: block;
 }
 
 .nokia-btn:hover {
@@ -318,6 +561,11 @@ body {
   align-items: center;
   justify-content: center;
   transition: background 0.15s, transform 0.1s;
+}
+
+.strip-btn span,
+.chat-pill span {
+  display: none;
 }
 
 .strip-btn:hover {
@@ -473,7 +721,9 @@ body {
   border-radius: var(--radius-lg);
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  max-height: 88%;
+  gap: 12px;
+  overflow-y: auto;
 }
 
 .admin-panel h3 {
@@ -496,7 +746,9 @@ body {
   letter-spacing: 0.05em;
 }
 
-.admin-field input[type="text"] {
+.admin-field input[type="text"],
+.admin-field select,
+.admin-labels input {
   padding: 6px 8px;
   border: 1px solid var(--bg-button);
   border-radius: var(--radius);
@@ -513,6 +765,53 @@ body {
 .admin-radio-group {
   display: flex;
   gap: 12px;
+}
+
+.admin-select-row,
+.admin-colors,
+.admin-labels {
+  display: flex;
+  gap: 6px;
+}
+
+.admin-select-row select {
+  min-width: 0;
+  flex: 1;
+}
+
+.admin-colors {
+  flex-wrap: wrap;
+}
+
+.admin-colors label {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--text-secondary);
+  font-size: 10px;
+  text-transform: none;
+}
+
+.admin-colors input[type="color"] {
+  width: 23px;
+  height: 20px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  cursor: pointer;
+}
+
+.admin-labels input {
+  min-width: 0;
+  width: 25%;
+}
+
+.admin-check label {
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 400;
+  letter-spacing: normal;
+  text-transform: none;
 }
 
 .admin-radio-group label {
