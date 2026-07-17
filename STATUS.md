@@ -33,6 +33,7 @@
 
 ## Last 10 Changes
 
+- 2026-07-17: Added `sheets_snapshot` tool that returns a compressed structural summary of a Google Sheet — dimensions, frozen panes, merges, headers, column types/fill rates, sample rows, auto-detected issues, and optional formatting info. Registered in the Demo Bench MCP server under the `document_extractor` demo.
 - 2026-07-17: Made every Demo Bench MCP database connection set `search_path` to `arcillis` explicitly, removing the fragile URL options fallback that broke psycopg2 URI parsing on macOS.
 - 2026-07-17: Added gspread-backed Google Sheets MCP tools for writing formatted headers, live color-coded extraction rows, arbitrary cells, and reads. The macOS launcher now supplies the service-account credential path.
 - 2026-07-17: Added Mac-runnable MCP startup and four live Excel tools: cell read/write, basic formatting, and color-coded extraction row output. The MCP database URL is now configurable so macOS connects to PC Postgres through Tailscale.

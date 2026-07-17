@@ -23,6 +23,7 @@ from demo2_tools import (
     run_extraction,
     scan_inbox,
     sheets_read_cells,
+    sheets_snapshot,
     sheets_write_cells,
     sheets_write_extraction_row,
     sheets_write_headers,
@@ -67,6 +68,14 @@ TOOL_REGISTRY: dict[str, list[Tool]] = {
         Tool("sheets_write_extraction_row", "Write one extraction result as a color-coded row in a Google Sheet; use for live row-by-row output.", _object({"spreadsheet_id": {"type": "string"}, "row_number": {"type": "integer", "minimum": 2, "description": "Row number (2+ since row 1 is headers)."}, "extraction_data": {"type": "object", "description": "Fields: invoice_id, filename, vendor, invoice_number, date, total, accuracy, status."}, "sheet_name": {"type": "string", "default": "Sheet1"}}, ["spreadsheet_id", "row_number", "extraction_data"]), sheets_write_extraction_row),
         Tool("sheets_write_cells", "Write a value, row, or grid to an arbitrary range in a Google Sheet.", _object({"spreadsheet_id": {"type": "string"}, "range_str": {"type": "string", "description": "Cell or range like A2 or A2:F2."}, "values": {"type": "array"}, "sheet_name": {"type": "string", "default": "Sheet1"}}, ["spreadsheet_id", "range_str", "values"]), sheets_write_cells),
         Tool("sheets_read_cells", "Read values from a range in a Google Sheet.", _object({"spreadsheet_id": {"type": "string"}, "range_str": {"type": "string"}, "sheet_name": {"type": "string", "default": "Sheet1"}}, ["spreadsheet_id", "range_str"]), sheets_read_cells),
+        Tool("sheets_snapshot", "Get a compressed structural and data summary of a Google Sheet — headers, column types, fill rates, sample rows, issues, and optional formatting. Use this to see the sheet before reading or writing.", _object({
+            "spreadsheet_id": {"type": "string", "description": "Google Sheet ID from the URL."},
+            "sheet_name": {"type": "string", "default": "Sheet1"},
+            "include_values": {"type": "boolean", "default": True, "description": "Include column analysis and sample rows."},
+            "include_formatting": {"type": "boolean", "default": False, "description": "Include RLE-compressed formatting info."},
+            "compact_mode": {"type": "boolean", "default": True, "description": "True = summary only (recommended). False = include all values."},
+            "max_sample_rows": {"type": "integer", "default": 5, "description": "Number of sample rows from top and bottom."},
+        }, ["spreadsheet_id"]), sheets_snapshot),
     ],
 }
 

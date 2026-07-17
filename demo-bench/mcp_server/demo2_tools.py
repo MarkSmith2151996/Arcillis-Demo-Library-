@@ -450,6 +450,198 @@ def sheets_read_cells(
         return {"error": str(error)}
 
 
+def _column_letter(index: int) -> str:
+    """Convert a zero-based column index to an A1 letter (0 -> A, 25 -> Z, 26 -> AA)."""
+    result = ""
+    n = index
+    while n >= 0:
+        result = chr(65 + (n % 26)) + result
+        n = n // 26 - 1
+    return result
+
+
+def _rgb_to_hex(bg: dict[str, Any]) -> str | None:
+    """Convert a Sheets color dict to a #RRGGBB hex string."""
+    try:
+        r = int(bg.get("red", 0) * 255)
+        g = int(bg.get("green", 0) * 255)
+        b = int(bg.get("blue", 0) * 255)
+        return f"#{r:02X}{g:02X}{b:02X}"
+    except (TypeError, ValueError):
+        return None
+
+
+def sheets_snapshot(
+    spreadsheet_id: str,
+    sheet_name: str = "Sheet1",
+    include_values: bool = True,
+    include_formatting: bool = False,
+    compact_mode: bool = True,
+    max_sample_rows: int = 5,
+) -> dict[str, Any]:
+    """Return a compressed structural and data summary of a Google Sheet."""
+    try:
+        gc = _sheets_client()
+        sh = gc.open_by_key(spreadsheet_id)
+        ws = sh.worksheet(sheet_name)
+
+        structure = {
+            "sheet_name": sheet_name,
+            "dimensions": {"rows": ws.row_count, "columns": ws.col_count},
+            "frozen": {"rows": ws.frozen_row_count or 0, "columns": ws.frozen_col_count or 0},
+            "hidden_columns": [],
+            "hidden_rows": [],
+            "merges": [],
+        }
+
+        try:
+            raw_merges = sh.client.request(
+                "get",
+                f"https://sheets.googleapis.com/v4/spreadsheets/{spreadsheet_id}",
+                params={"fields": "sheets.merges"},
+            )
+            raw_json = raw_merges.json() if hasattr(raw_merges, "json") else raw_merges
+            for s in raw_json.get("sheets", []):
+                if s.get("properties", {}).get("title") == sheet_name:
+                    structure["merges"] = [
+                        merge.get("range", {}) for merge in s.get("merges", [])
+                    ]
+                    break
+        except Exception:
+            pass
+
+        result: dict[str, Any] = {"structure": structure}
+
+        if not include_values:
+            return result
+
+        values = ws.get_all_values()
+        if not values:
+            result["headers"] = []
+            result["column_summary"] = []
+            result["sample_rows"] = {"first": [], "last": []}
+            result["issues"] = []
+            if not compact_mode:
+                result["all_values"] = []
+            return result
+
+        headers = list(values[0])
+        while len(headers) < ws.col_count:
+            headers.append("")
+        data_rows = values[1:] if len(values) > 1 else []
+
+        result["headers"] = headers
+
+        column_summary: list[dict[str, Any]] = []
+        issues: list[str] = []
+
+        for col_idx in range(ws.col_count):
+            col_letter = _column_letter(col_idx)
+            header = headers[col_idx]
+            col_values = [
+                row[col_idx] if col_idx < len(row) else "" for row in data_rows
+            ]
+            filled = sum(1 for v in col_values if v != "")
+            empty = len(col_values) - filled
+
+            summary: dict[str, Any] = {
+                "column": col_letter,
+                "header": header,
+                "type": "empty",
+                "filled": filled,
+                "empty": empty,
+            }
+            non_empty = [v for v in col_values if v != ""]
+
+            if non_empty:
+                numeric_count = 0
+                numeric_values: list[float] = []
+                for v in non_empty:
+                    try:
+                        cleaned = (
+                            v.replace("$", "").replace(",", "").replace("%", "").strip()
+                        )
+                        if cleaned == "" or cleaned == "-":
+                            continue
+                        numeric_values.append(float(cleaned))
+                        numeric_count += 1
+                    except (ValueError, AttributeError):
+                        pass
+
+                if numeric_count > 0 and numeric_count / len(non_empty) >= 0.8:
+                    summary["type"] = "numeric"
+                    summary["min"] = round(min(numeric_values), 2)
+                    summary["max"] = round(max(numeric_values), 2)
+                    summary["avg"] = round(sum(numeric_values) / len(numeric_values), 2)
+                elif numeric_count > 0:
+                    summary["type"] = "mixed"
+                else:
+                    summary["type"] = "text"
+                    unique_vals = list(dict.fromkeys(non_empty))
+                    if len(unique_vals) <= 10:
+                        summary["unique_values"] = unique_vals
+
+            column_summary.append(summary)
+
+            if empty > 0:
+                label = f" ({header})" if header else ""
+                issues.append(f"{empty} empty cells in column {col_letter}{label}")
+
+        result["column_summary"] = column_summary
+        result["issues"] = issues
+
+        first_n = min(max_sample_rows, len(data_rows))
+        last_n = 0
+        if len(data_rows) > first_n:
+            last_n = min(3, len(data_rows) - first_n)
+        elif len(data_rows) <= max_sample_rows * 2:
+            first_n = len(data_rows)
+            last_n = 0
+
+        result["sample_rows"] = {
+            "first": data_rows[:first_n],
+            "last": data_rows[-last_n:] if last_n > 0 else [],
+        }
+
+        if not compact_mode:
+            result["all_values"] = values
+
+        if include_formatting:
+            formatting: dict[str, Any] = {"bold_ranges": [], "backgrounds": {}}
+            try:
+                raw_fmt = sh.client.request(
+                    "get",
+                    f"https://sheets.googleapis.com/v4/spreadsheets/{spreadsheet_id}",
+                    params={
+                        "fields": "sheets.data.rowData.values.userEnteredFormat",
+                        "ranges": f"'{sheet_name}'",
+                    },
+                )
+                fmt_json = raw_fmt.json() if hasattr(raw_fmt, "json") else raw_fmt
+                for s in fmt_json.get("sheets", []):
+                    for grid_data in s.get("data", []):
+                        for row_idx, row_data in enumerate(grid_data.get("rowData", [])):
+                            for col_idx, cell_data in enumerate(row_data.get("values", [])):
+                                fmt = cell_data.get("userEnteredFormat", {})
+                                if not fmt:
+                                    continue
+                                cell_ref = f"{_column_letter(col_idx)}{row_idx + 1}"
+                                if fmt.get("textFormat", {}).get("bold"):
+                                    formatting["bold_ranges"].append(cell_ref)
+                                bg = fmt.get("backgroundColor", {})
+                                if bg:
+                                    hex_color = _rgb_to_hex(bg)
+                                    if hex_color:
+                                        formatting["backgrounds"][cell_ref] = hex_color
+            except Exception:
+                pass
+            result["formatting"] = formatting
+
+        return result
+    except Exception as error:
+        return {"error": str(error)}
+
+
 def reprocess_invoices(invoice_ids: list[int]) -> dict[str, Any]:
     """Queue a future extraction rerun without invoking the extraction engine yet."""
     logging.getLogger(__name__).info("Reprocessing requested for invoices: %s", invoice_ids)
