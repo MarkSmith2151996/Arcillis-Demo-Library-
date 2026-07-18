@@ -693,6 +693,18 @@ def _a1_to_grid_range(range_str: str, sheet_id: int) -> dict[str, int]:
     return grid_range
 
 
+def _grid_range_to_a1(grid_range: dict[str, Any]) -> str:
+    """Convert a Sheets API GridRange dict back to A1 notation."""
+    start_row = grid_range.get("startRowIndex", 0)
+    end_row = grid_range.get("endRowIndex", start_row + 1)
+    start_col = grid_range.get("startColumnIndex", 0)
+    end_col = grid_range.get("endColumnIndex", start_col + 1)
+
+    start = rowcol_to_a1(start_row + 1, start_col + 1)
+    end = rowcol_to_a1(end_row, end_col)
+    return start if start == end else f"{start}:{end}"
+
+
 def _hex_to_rgb(color: str) -> dict[str, float]:
     """Convert a six-digit hexadecimal color to the Sheets RGB representation."""
     hex_color = color.lstrip("#")
@@ -703,6 +715,181 @@ def _hex_to_rgb(color: str) -> dict[str, float]:
         "green": int(hex_color[2:4], 16) / 255,
         "blue": int(hex_color[4:6], 16) / 255,
     }
+
+
+def sheets_chart_create(
+    spreadsheet_id: str,
+    chart_type: str,
+    label_range: str,
+    data_ranges: list[str],
+    sheet_name: str = "Sheet1",
+    series_names: list[str] | None = None,
+    title: str | None = None,
+    anchor_cell: str = "H2",
+    width: int = 600,
+    height: int = 400,
+) -> dict[str, Any]:
+    """Create an embedded chart in a Google Sheet."""
+    try:
+        gc = _sheets_client()
+        sh = gc.open_by_key(spreadsheet_id)
+        ws = sh.worksheet(sheet_name)
+        sheet_id = ws.id
+
+        domain_grid = _a1_to_grid_range(label_range, sheet_id)
+        domain = {"domain": {"sourceRange": {"sources": [domain_grid]}}}
+        series = [
+            {
+                "series": {
+                    "sourceRange": {"sources": [_a1_to_grid_range(data_range, sheet_id)]}
+                },
+                "targetAxis": "LEFT_AXIS",
+            }
+            for data_range in data_ranges
+        ]
+
+        if chart_type == "PIE":
+            chart_spec = {
+                "title": title or "",
+                "pieChart": {
+                    "legendPosition": "RIGHT_LEGEND",
+                    "domain": domain["domain"],
+                    "series": [
+                        {
+                            "series": {
+                                "sourceRange": {
+                                    "sources": [_a1_to_grid_range(data_ranges[0], sheet_id)]
+                                }
+                            }
+                        }
+                    ],
+                },
+            }
+        else:
+            chart_spec = {
+                "title": title or "",
+                "basicChart": {
+                    "chartType": chart_type,
+                    "legendPosition": "BOTTOM_LEGEND",
+                    "axis": [
+                        {"position": "BOTTOM_AXIS"},
+                        {"position": "LEFT_AXIS", "title": ""},
+                    ],
+                    "domains": [domain],
+                    "series": series,
+                    "headerCount": 0,
+                },
+            }
+
+        anchor_grid = _a1_to_grid_range(anchor_cell, sheet_id)
+        request = {
+            "addChart": {
+                "chart": {
+                    "spec": chart_spec,
+                    "position": {
+                        "overlayPosition": {
+                            "anchorCell": {
+                                "sheetId": sheet_id,
+                                "rowIndex": anchor_grid.get("startRowIndex", 1),
+                                "columnIndex": anchor_grid.get("startColumnIndex", 7),
+                            },
+                            "widthPixels": width,
+                            "heightPixels": height,
+                        }
+                    },
+                }
+            }
+        }
+        result = sh.batch_update({"requests": [request]})
+        chart_id = next(
+            (
+                reply["addChart"]["chart"]["chartId"]
+                for reply in result.get("replies", [])
+                if "addChart" in reply
+            ),
+            None,
+        )
+        return {
+            "status": "chart_created",
+            "chart_id": chart_id,
+            "chart_type": chart_type,
+            "title": title,
+            "anchor": anchor_cell,
+            "spreadsheet_id": spreadsheet_id,
+        }
+    except Exception as error:
+        return {"error": str(error)}
+
+
+def sheets_chart_snapshot(
+    spreadsheet_id: str,
+    sheet_name: str = "Sheet1",
+) -> dict[str, Any]:
+    """List embedded charts in a Google Sheet tab with readable configuration."""
+    try:
+        gc = _sheets_client()
+        sh = gc.open_by_key(spreadsheet_id)
+        ws = sh.worksheet(sheet_name)
+
+        spreadsheet = sh.fetch_sheet_metadata()
+        target_sheet = next(
+            (
+                sheet
+                for sheet in spreadsheet.get("sheets", [])
+                if sheet.get("properties", {}).get("sheetId") == ws.id
+            ),
+            None,
+        )
+        if not target_sheet:
+            return {"charts": [], "count": 0, "spreadsheet_id": spreadsheet_id}
+
+        charts = []
+        for chart in target_sheet.get("charts", []):
+            spec = chart.get("spec", {})
+            chart_info: dict[str, Any] = {
+                "chart_id": chart.get("chartId"),
+                "title": spec.get("title", ""),
+            }
+
+            if "basicChart" in spec:
+                basic_chart = spec["basicChart"]
+                chart_info["chart_type"] = basic_chart.get("chartType", "UNKNOWN")
+                domains = basic_chart.get("domains", [])
+                if domains:
+                    sources = domains[0].get("domain", {}).get("sourceRange", {}).get("sources", [])
+                    chart_info["label_range"] = _grid_range_to_a1(sources[0]) if sources else None
+                series_list = basic_chart.get("series", [])
+            elif "pieChart" in spec:
+                pie_chart = spec["pieChart"]
+                chart_info["chart_type"] = "PIE"
+                sources = pie_chart.get("domain", {}).get("sourceRange", {}).get("sources", [])
+                chart_info["label_range"] = _grid_range_to_a1(sources[0]) if sources else None
+                series_list = pie_chart.get("series", [])
+            else:
+                chart_info["chart_type"] = "UNKNOWN"
+                series_list = []
+
+            chart_info["data_ranges"] = []
+            for series in series_list:
+                sources = series.get("series", {}).get("sourceRange", {}).get("sources", [])
+                if sources:
+                    chart_info["data_ranges"].append(_grid_range_to_a1(sources[0]))
+
+            overlay = chart.get("position", {}).get("overlayPosition", {})
+            anchor = overlay.get("anchorCell", {})
+            if anchor:
+                chart_info["anchor"] = rowcol_to_a1(
+                    anchor.get("rowIndex", 0) + 1,
+                    anchor.get("columnIndex", 0) + 1,
+                )
+                chart_info["width"] = overlay.get("widthPixels")
+                chart_info["height"] = overlay.get("heightPixels")
+
+            charts.append(chart_info)
+
+        return {"charts": charts, "count": len(charts), "spreadsheet_id": spreadsheet_id}
+    except Exception as error:
+        return {"error": str(error)}
 
 
 def sheets_format_cells(

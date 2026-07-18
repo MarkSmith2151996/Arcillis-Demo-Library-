@@ -33,6 +33,7 @@
 
 ## Last 10 Changes
 
+- 2026-07-17: Added `sheets_chart_create` and `sheets_chart_snapshot` MCP tools for embedded BAR, LINE, PIE, COLUMN, and AREA Google Sheets charts plus readable chart verification snapshots.
 - 2026-07-17: Added nine general-purpose Google Sheets MCP tools for formatting, formulas, row append/clear/management, merging, find, conditional formatting, and data validation. Added a live service-account smoke-test script and registered every tool under `document_extractor`.
 - 2026-07-17: Fixed `sheets_snapshot` to detect and analyze only the Google Sheet's populated row and column range, while retaining the full grid dimensions for context.
 - 2026-07-17: Added `sheets_snapshot` tool that returns a compressed structural summary of a Google Sheet — dimensions, frozen panes, merges, headers, column types/fill rates, sample rows, auto-detected issues, and optional formatting info. Registered in the Demo Bench MCP server under the `document_extractor` demo.
@@ -43,7 +44,6 @@
 - 2026-07-16: Wired ARC Toolbar chat and action buttons to DeepSeek function calling with the Demo Bench MCP server. Added schema-scoped Demo 2 DB access, Gmail inbox scanning, staged image/PDF extraction, and Tauri capability permissions.
 - 2026-07-15: Enabled Tauri v2 Cargo features for macOS — `devtools` + `macos-private-api` in Cargo.toml, `macOSPrivateApi: true` in tauri.conf.json, for transparent windows and drag.
 - 2026-07-15: Fixed ARC Toolbar window drag and close on macOS — added `startDragging()` on titlebar mousedown, try/catch on minimize/close, `-webkit-app-region` CSS fallback, and console logging.
-- 2026-07-15: Added ARC Toolbar — a Tauri (v2) + Vite vanilla JS floating desktop app with three layout modes (Nokia, Strip, Chat-first), mock data, custom title bar, and an admin overlay. Visual prototype only; no backend connections.
 
 ## Known Issues
 
@@ -51,3 +51,4 @@
 - `scan_inbox` needs a valid `GMAIL_CREDENTIALS_PATH`; its first run opens a local OAuth consent flow and stores `gmail-token.json` beside those credentials.
 - The Mac bridge timed out during this task, so `start_mac.sh` and real Excel automation still need a manual macOS verification with an open workbook.
 - The Google Sheets extension smoke test requires a service-account credential and a spreadsheet shared with that account; it was syntax and import verified locally but not run against the live API from this Linux workspace.
+- This Linux workspace does not currently have `gspread`, so the chart tools were syntax and mocked API verified but need direct import verification in the dependency-complete MCP environment.
