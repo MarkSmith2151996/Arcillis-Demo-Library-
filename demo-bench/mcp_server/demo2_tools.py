@@ -738,12 +738,13 @@ def sheets_chart_create(
 
         domain_grid = _a1_to_grid_range(label_range, sheet_id)
         domain = {"domain": {"sourceRange": {"sources": [domain_grid]}}}
+        axis = "BOTTOM_AXIS" if chart_type == "BAR" else "LEFT_AXIS"
         series = [
             {
                 "series": {
                     "sourceRange": {"sources": [_a1_to_grid_range(data_range, sheet_id)]}
                 },
-                "targetAxis": "LEFT_AXIS",
+                "targetAxis": axis,
             }
             for data_range in data_ranges
         ]
@@ -754,15 +755,11 @@ def sheets_chart_create(
                 "pieChart": {
                     "legendPosition": "RIGHT_LEGEND",
                     "domain": domain["domain"],
-                    "series": [
-                        {
-                            "series": {
-                                "sourceRange": {
-                                    "sources": [_a1_to_grid_range(data_ranges[0], sheet_id)]
-                                }
-                            }
+                    "series": {
+                        "sourceRange": {
+                            "sources": [_a1_to_grid_range(data_ranges[0], sheet_id)]
                         }
-                    ],
+                    },
                 },
             }
         else:
@@ -864,12 +861,19 @@ def sheets_chart_snapshot(
                 chart_info["chart_type"] = "PIE"
                 sources = pie_chart.get("domain", {}).get("sourceRange", {}).get("sources", [])
                 chart_info["label_range"] = _grid_range_to_a1(sources[0]) if sources else None
-                series_list = pie_chart.get("series", [])
+                # pieChart.series is a single ChartData, not a list.
+                pie_series = pie_chart.get("series", {})
+                chart_info["data_ranges"] = []
+                if pie_series:
+                    pie_sources = pie_series.get("sourceRange", {}).get("sources", [])
+                    if pie_sources:
+                        chart_info["data_ranges"].append(_grid_range_to_a1(pie_sources[0]))
+                series_list = []
             else:
                 chart_info["chart_type"] = "UNKNOWN"
                 series_list = []
 
-            chart_info["data_ranges"] = []
+            chart_info.setdefault("data_ranges", [])
             for series in series_list:
                 sources = series.get("series", {}).get("sourceRange", {}).get("sources", [])
                 if sources:
