@@ -17,6 +17,7 @@ import psycopg2
 from psycopg2.extras import Json
 from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill
+from gspread.utils import rowcol_to_a1
 
 
 DATABASE_URL = os.environ.get(
@@ -798,7 +799,7 @@ def sheets_calculate(spreadsheet_id: str, formula: str, sheet_name: str = "Sheet
         sh = gc.open_by_key(spreadsheet_id)
         ws = sh.worksheet(sheet_name)
         formula = formula if formula.startswith("=") else f"={formula}"
-        temp_cell = "Z9999"
+        temp_cell = "Z999"
         ws.update_acell(temp_cell, formula)
         try:
             time.sleep(0.5)
@@ -908,7 +909,7 @@ def sheets_find(
         ws = sh.worksheet(sheet_name)
         pattern: str | re.Pattern[str] = query if case_sensitive else re.compile(re.escape(query), re.IGNORECASE)
         results = ws.findall(pattern)
-        matches = [{"cell": cell.label, "value": cell.value, "row": cell.row, "col": cell.col} for cell in results]
+        matches = [{"cell": rowcol_to_a1(cell.row, cell.col), "value": cell.value, "row": cell.row, "col": cell.col} for cell in results]
         return {"matches": matches, "count": len(matches), "spreadsheet_id": spreadsheet_id}
     except Exception as error:
         return {"error": str(error)}
