@@ -6,14 +6,17 @@ netsh interface portproxy add v4tov4 listenport=8098 listenaddress=0.0.0.0 conne
 
 from __future__ import annotations
 
+from collections import OrderedDict
 from dataclasses import dataclass
 import json
+import time
 from typing import Any, Callable
 
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from pydantic_ai import (
+    AgentRunResultEvent,
     FunctionToolCallEvent,
     FunctionToolResultEvent,
     PartDeltaEvent,
@@ -27,9 +30,9 @@ from agent import (
     DEFAULT_DEMO_NAME,
     DEFAULT_SPREADSHEET_ID,
     AgentContext,
-    agent,
     get_model,
     get_tool_definitions,
+    run_agent_events,
 )
 
 from demo2_tools import (
@@ -153,12 +156,42 @@ class ToolLoadRequest(BaseModel):
 
 class AgentChatRequest(BaseModel):
     message: str
+    session_id: str = "default"
     client_name: str = DEFAULT_CLIENT_NAME
     spreadsheet_id: str = DEFAULT_SPREADSHEET_ID
     demo: str = DEFAULT_DEMO_NAME
 
 
+class AgentResetRequest(BaseModel):
+    session_id: str = "default"
+
+
 app = FastAPI(title="Demo Bench MCP Server")
+
+
+MAX_SESSIONS = 100
+MAX_MESSAGES_PER_SESSION = 50
+sessions: OrderedDict[str, dict[str, Any]] = OrderedDict()
+
+
+def get_session(session_id: str) -> list[Any]:
+    """Get message history for a session, or an empty list for a new session."""
+    entry = sessions.get(session_id)
+    if entry:
+        entry["last_access"] = time.time()
+        sessions.move_to_end(session_id)
+        return entry["messages"]
+    return []
+
+
+def save_session(session_id: str, messages: list[Any]) -> None:
+    """Store an updated history and enforce the bounded in-memory session cache."""
+    if len(messages) > MAX_MESSAGES_PER_SESSION:
+        messages = messages[-MAX_MESSAGES_PER_SESSION:]
+    sessions[session_id] = {"messages": messages, "last_access": time.time()}
+    sessions.move_to_end(session_id)
+    while len(sessions) > MAX_SESSIONS:
+        sessions.popitem(last=False)
 
 
 def _tools_for(demo: str) -> list[Tool]:
@@ -253,16 +286,39 @@ async def agent_chat(request: AgentChatRequest) -> StreamingResponse:
         spreadsheet_id=request.spreadsheet_id,
         demo_name=request.demo,
     )
+    history = get_session(request.session_id)
 
     async def event_stream():
+        result = None
         try:
-            async with agent.run_stream_events(request.message, deps=context, model=model) as events:
+            async with run_agent_events(
+                request.message,
+                context,
+                model,
+                message_history=history,
+            ) as events:
                 async for event in events:
+                    if isinstance(event, AgentRunResultEvent):
+                        result = event.result
+                        continue
                     payload = event_to_dict(event)
                     if payload is not None:
                         yield f"data: {json.dumps(payload, default=str)}\n\n"
+            if result is not None:
+                save_session(request.session_id, result.all_messages())
         except Exception as error:
             yield f"data: {json.dumps({'type': 'error', 'content': str(error)})}\n\n"
         yield f"data: {json.dumps({'type': 'done'})}\n\n"
 
     return StreamingResponse(event_stream(), media_type="text/event-stream")
+
+
+@app.post("/agent/reset")
+def reset_session(
+    request: AgentResetRequest | None = None,
+    session_id: str | None = None,
+) -> dict[str, str]:
+    """Forget a browser session's in-memory conversation history."""
+    active_session_id = session_id or (request.session_id if request else "default")
+    sessions.pop(active_session_id, None)
+    return {"status": "ok", "session_id": active_session_id}

@@ -9,7 +9,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 import httpx
-from pydantic_ai import Agent, FunctionToolset, RunContext, Tool
+from pydantic_ai import Agent, AgentEventStream, FunctionToolset, RunContext, Tool
 from pydantic_ai.models.openai import OpenAIChatModel
 from pydantic_ai.providers.deepseek import DeepSeekProvider
 
@@ -106,6 +106,7 @@ OPERATING RULES
 8. If the user's request is ambiguous, ask one clarifying question. Do not guess at critical parameters like which spreadsheet or which data range.
 9. When creating formatted output, apply professional styling: bold headers with a dark background and white text, consistent number formatting, conditional coloring on accuracy scores.
 10. Verify your work. After writing data, snapshot or read back to confirm. After creating a chart, snapshot it.
+11. When a dashboard would make the response clearer, return exactly one JSON object without markdown. Its shape is {"text":"brief chat summary","display":{"size":{"width":"compact|standard|wide|full","height":"short|standard|tall|full"},"rows":[{"components":[...]}]}}. The display component types are number(value,label,color), text(value,label), table(headers,rows), status(label,value,color), progress(label,value,max,color), button(label,intent,color), and divider. Components may set width to full, half, or third. Use semantic colors success, warning, danger, neutral, info, or a hex color. Return plain text when a visual display is not useful.
 """
 
 
@@ -376,6 +377,21 @@ agent = Agent[AgentContext, str](
     tools=[load_tools],
     tool_timeout=60,
 )
+
+
+def run_agent_events(
+    message: str,
+    context: AgentContext,
+    model: OpenAIChatModel,
+    message_history: list[Any] | None = None,
+) -> AgentEventStream[Any]:
+    """Start an event stream while preserving an optional prior conversation."""
+    return agent.run_stream_events(
+        message,
+        deps=context,
+        model=model,
+        message_history=message_history,
+    )
 
 
 @agent.toolset

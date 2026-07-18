@@ -1,9 +1,6 @@
 import { getCurrentWindow, LogicalSize } from "@tauri-apps/api/window";
 import { renderDisplay } from "./components.js";
 
-const DEEPSEEK_API_KEY = import.meta.env.VITE_DEEPSEEK_API_KEY;
-const DEEPSEEK_URL = "https://api.deepseek.com/v1/chat/completions";
-const CHAT_MODEL = "deepseek-v4-flash";
 const STORAGE_KEY = "arc-toolbar-settings";
 const SIZES = { compact: 280, standard: 400, wide: 600, full: 800, short: 200, tall: 600 };
 const DEFAULT_CONFIG = {
@@ -33,10 +30,6 @@ const defaultDisplay = {
     { components: [{ type: "text", width: "full", label: "ARC", value: "Ask ARC to scan, extract, or export invoices.", color: "info" }] },
   ],
 };
-const CHAT_SYSTEM_PROMPT = `You are ARC, an AI assistant embedded in a document extraction toolbar. You help users understand extraction results and take actions using the supplied tools. Be concise and practical.
-
-When your response would be clearer as a dashboard, respond with exactly one JSON object, without markdown. Its shape is {"text":"brief chat summary","display":{"size":{"width":"compact|standard|wide|full","height":"short|standard|tall|full"},"rows":[{"components":[...]}]}}. The display component types are number(value,label,color), text(value,label), table(headers,rows), status(label,value,color), progress(label,value,max,color), button(label,intent,color), and divider. Each component may set width to full, half, or third. Use semantic colors success, warning, danger, neutral, info, or a hex color. The frontend handles all markup and styling. Return normal plain text when a visual display is not useful.`;
-
 function loadStored() {
   try { return JSON.parse(localStorage.getItem(STORAGE_KEY)) || {}; } catch { return {}; }
 }
@@ -51,7 +44,7 @@ let state = {
   screenView: "display",
   statusLog: [{ type: "success", text: "ARC ready" }],
   chatMessages: [],
-  mcpTools: [],
+  sessionId: crypto.randomUUID?.() || `arc-${Date.now()}`,
   chatBusy: false,
 };
 const appWindow = getCurrentWindow();
@@ -133,9 +126,17 @@ function toggleScreenView() { state.screenView = state.screenView === "display" 
 function injectIntent(intent) { state.screenView = "display"; handleChatSend(intent); }
 function handleToolbarAction(id) { if (id === "ask" && state.layout === "nokia") { state.screenView = "chat"; renderNokia(); $("#nokia-chat-input")?.focus(); return; } handleChatSend(buttonIntents[id] || `Handle the ${id} toolbar action.`); }
 
-async function mcpListTools() { const res = await fetch(`${state.serverUrl}/mcp/tools/list`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ demo: "document_extractor" }) }); if (!res.ok) throw new Error(`MCP tool discovery failed (${res.status}).`); return res.json(); }
-async function mcpCallTool(tool, args = {}) { const res = await fetch(`${state.serverUrl}/mcp/tools/call`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ demo: "document_extractor", tool, args }) }); if (!res.ok) throw new Error(`MCP tool ${tool} failed (${res.status}): ${await res.text()}`); return res.json(); }
-async function discoverMcpTools() { try { const tools = await mcpListTools(); if (!Array.isArray(tools)) throw new Error("MCP returned an invalid tool list."); state.mcpTools = tools.map((tool) => ({ type: "function", function: tool })); addStatus("success", `${tools.length} MCP tools connected`); } catch (error) { state.mcpTools = []; addStatus("warning", `MCP tools unavailable: ${error.message}`); } }
+async function checkServerHealth() {
+  try {
+    const res = await fetch(`${state.serverUrl}/mcp/tools/list`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ demo: "document_extractor" }) });
+    if (!res.ok) throw new Error(`Server returned ${res.status}`);
+    const tools = await res.json();
+    if (!Array.isArray(tools)) throw new Error("Server returned an invalid tool list");
+    addStatus("success", `Server connected (${tools.length} tools)`);
+  } catch (error) {
+    addStatus("warning", `Server offline: ${error.message}`);
+  }
+}
 
 function parseAgentResponse(response) {
   const raw = response.trim().replace(/^```json\s*|\s*```$/g, "");
@@ -146,34 +147,102 @@ function parseAgentResponse(response) {
   return { text: response, display: null };
 }
 function validateDisplay(display) { return display && Array.isArray(display.rows); }
+function updateStreamingBubble(text) {
+  const typingIndex = state.chatMessages.findIndex((message) => message.typing);
+  if (typingIndex !== -1) {
+    state.chatMessages[typingIndex].text = text || "ARC is thinking...";
+    rerenderChats();
+  }
+}
+async function runAgentStream(message) {
+  const res = await fetch(`${state.serverUrl}/agent/chat`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      message,
+      session_id: state.sessionId,
+      client_name: state.appName,
+      spreadsheet_id: "14ud-CDITpFnNcZwqS0U5zoehthT84978l3Tty1YXT2g",
+      demo: "document_extractor",
+    }),
+  });
+  if (!res.ok) throw new Error(`Agent request failed (${res.status}): ${await res.text()}`);
+  if (!res.body) throw new Error("Agent response did not include a stream.");
+
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let fullText = "";
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split("\n");
+    buffer = lines.pop();
+
+    for (const line of lines) {
+      if (!line.startsWith("data: ")) continue;
+      const raw = line.slice(6).trim();
+      if (!raw) continue;
+
+      let event;
+      try { event = JSON.parse(raw); } catch { continue; }
+
+      switch (event.type) {
+        case "text":
+          fullText += event.content || "";
+          updateStreamingBubble(fullText);
+          break;
+        case "tool_call":
+          addStatus("info", `Running ${event.name}...`);
+          break;
+        case "tool_result":
+          addStatus("success", `${event.name} complete`);
+          break;
+        case "error":
+          throw new Error(event.content || "Agent error");
+        case "done":
+          break;
+      }
+    }
+  }
+
+  return fullText || "Done.";
+}
 async function handleChatSend(text, inputEl) {
   const message = text.trim();
   if (!message || state.chatBusy) return;
-  if (!DEEPSEEK_API_KEY) { state.chatMessages.push({ role: "assistant", text: "Set VITE_DEEPSEEK_API_KEY before using ARC chat." }); rerenderChats(); return; }
   state.chatBusy = true;
   state.chatMessages.push({ role: "user", text: message }, { role: "assistant", text: "ARC is thinking...", typing: true });
   if (inputEl) inputEl.value = "";
   rerenderChats();
   try {
-    const result = parseAgentResponse(await runChatLoop());
+    const result = parseAgentResponse(await runAgentStream(message));
+    state.chatMessages = state.chatMessages.filter((entry) => !entry.typing);
     state.chatMessages.push({ role: "assistant", text: result.text });
     if (validateDisplay(result.display)) await updateDisplay(result.display);
     addStatus("success", "Response ready");
-  } catch (error) { state.chatMessages.push({ role: "assistant", text: `I could not complete that request: ${error.message}` }); addStatus("warning", `Chat error: ${error.message}`); }
-  finally { state.chatMessages = state.chatMessages.filter((entry) => !entry.typing); state.chatBusy = false; rerenderChats(); }
-}
-async function runChatLoop() {
-  const messages = [{ role: "system", content: CHAT_SYSTEM_PROMPT }, ...state.chatMessages.filter((message) => !message.typing).slice(-20).map((message) => ({ role: message.role, content: message.text }))];
-  for (let round = 0; round < 6; round += 1) {
-    const request = { model: CHAT_MODEL, messages }; if (state.mcpTools.length) request.tools = state.mcpTools;
-    const res = await fetch(DEEPSEEK_URL, { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${DEEPSEEK_API_KEY}` }, body: JSON.stringify(request) });
-    if (!res.ok) throw new Error(`DeepSeek request failed (${res.status}): ${await res.text()}`);
-    const assistantMessage = (await res.json()).choices?.[0]?.message; if (!assistantMessage) throw new Error("DeepSeek returned no message.");
-    const toolCalls = assistantMessage.tool_calls || []; if (!toolCalls.length) return assistantMessage.content || "I completed that request.";
-    messages.push(assistantMessage);
-    for (const toolCall of toolCalls) { const name = toolCall.function?.name; addStatus("info", `Running ${name}...`); let result; try { result = await mcpCallTool(name, JSON.parse(toolCall.function?.arguments || "{}")); } catch (error) { result = { error: error.message }; } messages.push({ role: "tool", tool_call_id: toolCall.id, content: JSON.stringify(result) }); }
+  } catch (error) {
+    state.chatMessages = state.chatMessages.filter((entry) => !entry.typing);
+    state.chatMessages.push({ role: "assistant", text: `I could not complete that request: ${error.message}` });
+    addStatus("warning", `Chat error: ${error.message}`);
+  } finally {
+    state.chatBusy = false;
+    rerenderChats();
   }
-  throw new Error("The assistant exceeded the six-round tool-call limit.");
+}
+async function resetSession() {
+  try {
+    await fetch(`${state.serverUrl}/agent/reset`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ session_id: state.sessionId }) });
+  } catch { /* The local session can still reset if the server is offline. */ }
+  state.sessionId = crypto.randomUUID?.() || `arc-${Date.now()}`;
+  state.chatMessages = [];
+  state.display = defaultDisplay;
+  state.displayStack = [];
+  saveState();
+  rerenderChats();
+  addStatus("success", "Session reset");
 }
 async function updateDisplay(display) { if (state.config.displayUpdates === "stack" && state.display) state.displayStack.push(state.display); state.display = display; saveState(); await applyDisplaySize(display.size); renderNokia(); }
 async function applyDisplaySize(size = state.config.defaultSize) { const width = SIZES[size?.width] || SIZES[state.config.defaultSize.width]; const height = SIZES[size?.height] || SIZES[state.config.defaultSize.height]; await animateWindowSize(width, height); }
@@ -194,5 +263,5 @@ function showAdmin() {
 }
 function bindAdminInput(selector, update) { $(selector).addEventListener("input", (event) => { update(event.target.value); saveState(); }); }
 function initWindowControls() { $(".titlebar").addEventListener("mousedown", (event) => { if (!event.target.closest(".titlebar-btn")) appWindow.startDragging().catch(console.error); }); $("#minimize").addEventListener("click", () => appWindow.minimize().catch(console.error)); $("#close").addEventListener("click", () => appWindow.close().catch(console.error)); }
-function initKeyboardShortcuts() { document.addEventListener("keydown", (event) => { if ((event.ctrlKey || event.metaKey) && event.shiftKey && event.key.toLowerCase() === "a") { event.preventDefault(); toggleAdmin(); } }); }
-initWindowControls(); initKeyboardShortcuts(); renderAll(); discoverMcpTools();
+function initKeyboardShortcuts() { document.addEventListener("keydown", (event) => { if ((event.ctrlKey || event.metaKey) && event.shiftKey && event.key.toLowerCase() === "r") { event.preventDefault(); resetSession(); return; } if ((event.ctrlKey || event.metaKey) && event.shiftKey && event.key.toLowerCase() === "a") { event.preventDefault(); toggleAdmin(); } }); }
+initWindowControls(); initKeyboardShortcuts(); renderAll(); checkServerHealth();
