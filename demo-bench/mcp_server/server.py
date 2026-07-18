@@ -7,10 +7,30 @@ netsh interface portproxy add v4tov4 listenport=8098 listenaddress=0.0.0.0 conne
 from __future__ import annotations
 
 from dataclasses import dataclass
+import json
 from typing import Any, Callable
 
 from fastapi import FastAPI, HTTPException
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
+from pydantic_ai import (
+    FunctionToolCallEvent,
+    FunctionToolResultEvent,
+    PartDeltaEvent,
+    PartStartEvent,
+    TextPart,
+    TextPartDelta,
+)
+
+from agent import (
+    DEFAULT_CLIENT_NAME,
+    DEFAULT_DEMO_NAME,
+    DEFAULT_SPREADSHEET_ID,
+    AgentContext,
+    agent,
+    get_model,
+    get_tool_definitions,
+)
 
 from demo2_tools import (
     export_to_csv,
@@ -126,6 +146,18 @@ class ToolCallRequest(BaseModel):
     args: dict[str, Any] = {}
 
 
+class ToolLoadRequest(BaseModel):
+    demo: str
+    tools: list[str]
+
+
+class AgentChatRequest(BaseModel):
+    message: str
+    client_name: str = DEFAULT_CLIENT_NAME
+    spreadsheet_id: str = DEFAULT_SPREADSHEET_ID
+    demo: str = DEFAULT_DEMO_NAME
+
+
 app = FastAPI(title="Demo Bench MCP Server")
 
 
@@ -142,6 +174,19 @@ def list_tools(request: ToolListRequest) -> list[dict[str, Any]]:
     return [tool.definition() for tool in _tools_for(request.demo)]
 
 
+@app.post("/mcp/tools/load")
+def load_tools_endpoint(request: ToolLoadRequest) -> list[dict[str, Any]]:
+    """Return enriched schemas and operational guidance for requested tools."""
+    available_tools = {tool.name for tool in _tools_for(request.demo)}
+    unknown = [name for name in request.tools if name not in available_tools]
+    if unknown:
+        raise HTTPException(status_code=404, detail=f"Unknown tools for {request.demo}: {', '.join(unknown)}")
+    try:
+        return get_tool_definitions(request.tools)
+    except ValueError as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
+
+
 @app.post("/mcp/tools/call")
 def call_tool(request: ToolCallRequest) -> dict[str, Any]:
     """Invoke a known demo-scoped tool with validated JSON arguments."""
@@ -152,3 +197,72 @@ def call_tool(request: ToolCallRequest) -> dict[str, Any]:
         return tool.handler(**request.args)
     except TypeError as error:
         raise HTTPException(status_code=422, detail=f"Invalid arguments for {request.tool}: {error}") from error
+
+
+def _json_value(value: Any) -> Any:
+    """Return a JSON-serializable SSE value without losing readable tool output."""
+    try:
+        json.dumps(value)
+    except (TypeError, ValueError):
+        return str(value)
+    return value
+
+
+def _tool_args(value: Any) -> Any:
+    if not isinstance(value, str):
+        return _json_value(value)
+    try:
+        return json.loads(value)
+    except json.JSONDecodeError:
+        return {"raw": value}
+
+
+def event_to_dict(event: Any) -> dict[str, Any] | None:
+    """Map PydanticAI stream events to the public SSE event contract."""
+    if isinstance(event, PartStartEvent) and isinstance(event.part, TextPart):
+        return {"type": "text", "content": event.part.content}
+    if isinstance(event, PartDeltaEvent) and isinstance(event.delta, TextPartDelta):
+        return {"type": "text", "content": event.delta.content_delta}
+    if isinstance(event, FunctionToolCallEvent):
+        return {
+            "type": "tool_call",
+            "name": event.part.tool_name,
+            "args": _tool_args(event.part.args),
+        }
+    if isinstance(event, FunctionToolResultEvent):
+        result = event.part or event.result
+        if result is not None:
+            return {
+                "type": "tool_result",
+                "name": result.tool_name,
+                "result": _json_value(result.content),
+            }
+    return None
+
+
+@app.post("/agent/chat")
+async def agent_chat(request: AgentChatRequest) -> StreamingResponse:
+    """Stream agent text, tool activity, and completion as server-sent events."""
+    try:
+        model = get_model()
+    except RuntimeError as error:
+        raise HTTPException(status_code=503, detail=str(error)) from error
+
+    context = AgentContext(
+        client_name=request.client_name,
+        spreadsheet_id=request.spreadsheet_id,
+        demo_name=request.demo,
+    )
+
+    async def event_stream():
+        try:
+            async with agent.run_stream_events(request.message, deps=context, model=model) as events:
+                async for event in events:
+                    payload = event_to_dict(event)
+                    if payload is not None:
+                        yield f"data: {json.dumps(payload, default=str)}\n\n"
+        except Exception as error:
+            yield f"data: {json.dumps({'type': 'error', 'content': str(error)})}\n\n"
+        yield f"data: {json.dumps({'type': 'done'})}\n\n"
+
+    return StreamingResponse(event_stream(), media_type="text/event-stream")

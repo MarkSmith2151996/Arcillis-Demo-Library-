@@ -25,7 +25,8 @@
 - `demo-bench/main.py`: Application shell, landing dialog launch, dock-layout reset, dark palette, and connection status indicator.
 - `demo-bench/widgets/demo_selector_window.py`: Dark landing dialog and clickable Document Extractor demo card.
 - `demo-bench/plugins/document_extractor.py`: Registers and lays out the Document Extractor intake, viewer, batch status, results table, and export docks.
-- `demo-bench/mcp_server/`: FastAPI server on port 8098 with demo-scoped MCP-style tool discovery/calls, guarded read access, result summaries, CSV/Excel exports, live xlwings workbook tools, Gmail inbox scanning, and staged vision extraction. `start_mac.sh` connects to the PC Postgres instance through Tailscale.
+- `demo-bench/mcp_server/`: FastAPI server on port 8098 with demo-scoped MCP-style tool discovery/calls, guarded read access, result summaries, CSV/Excel exports, live xlwings workbook tools, Gmail inbox scanning, staged vision extraction, and a streaming PydanticAI agent endpoint. `start_mac.sh` connects to the PC Postgres instance through Tailscale.
+- `demo-bench/mcp_server/agent.py`: PydanticAI DeepSeek harness with per-chat context, a tool catalog prompt, schema-backed local MCP wrappers, and two-phase `load_tools` discovery that exposes selected tools only on subsequent model turns.
 - `demo-bench/widgets/chat_widget.py`: Floating assistant bubble that discovers Demo 2 tools, calls DeepSeek from worker threads, and emits local invoice-highlight requests.
 - `demo-bench/widgets/results_table_widget.py`: Loads extraction records, grades, selectable rows, and field-level comparisons from Postgres.
 - `demo-bench/widgets/export_widget.py`: Exports checked (or confirmed all) extraction records as CSV or formatted Excel.
@@ -33,6 +34,7 @@
 
 ## Last 10 Changes
 
+- 2026-07-18: Added a PydanticAI DeepSeek agent harness with true two-phase MCP tool loading, enriched schemas for all 28 tools, `/mcp/tools/load`, and `/agent/chat` SSE events for text, tool calls, tool results, and completion.
 - 2026-07-18: Corrected Google Sheets chart API payloads: BAR series now target `BOTTOM_AXIS`, PIE creation sends a single `ChartData` series, and PIE snapshots parse that singular structure.
 - 2026-07-17: Added `sheets_chart_create` and `sheets_chart_snapshot` MCP tools for embedded BAR, LINE, PIE, COLUMN, and AREA Google Sheets charts plus readable chart verification snapshots.
 - 2026-07-17: Added nine general-purpose Google Sheets MCP tools for formatting, formulas, row append/clear/management, merging, find, conditional formatting, and data validation. Added a live service-account smoke-test script and registered every tool under `document_extractor`.
@@ -42,7 +44,6 @@
 - 2026-07-17: Added gspread-backed Google Sheets MCP tools for writing formatted headers, live color-coded extraction rows, arbitrary cells, and reads. The macOS launcher now supplies the service-account credential path.
 - 2026-07-17: Added Mac-runnable MCP startup and four live Excel tools: cell read/write, basic formatting, and color-coded extraction row output. The MCP database URL is now configurable so macOS connects to PC Postgres through Tailscale.
 - 2026-07-16: Added ARC Toolbar's structured component display system. The Nokia screen now defaults to a persisted dashboard with seven DOM-rendered primitives, responsive rows, an in-place chat fallback, intent buttons, loading overlay, animated preset sizing, and runtime admin controls for display configuration.
-- 2026-07-16: Wired ARC Toolbar chat and action buttons to DeepSeek function calling with the Demo Bench MCP server. Added schema-scoped Demo 2 DB access, Gmail inbox scanning, staged image/PDF extraction, and Tauri capability permissions.
 
 ## Known Issues
 
@@ -51,3 +52,4 @@
 - The Mac bridge timed out during this task, so `start_mac.sh` and real Excel automation still need a manual macOS verification with an open workbook.
 - The Google Sheets extension smoke test requires a service-account credential and a spreadsheet shared with that account; it was syntax and import verified locally but not run against the live API from this Linux workspace.
 - This Linux workspace does not currently have `gspread`, so the chart tools were syntax and mocked API verified but need direct import verification in the dependency-complete MCP environment.
+- The task specified PydanticAI 2.13.0, but the available global runtime has 1.97.0 and the root `.venv` lacks PydanticAI and FastAPI. The harness uses the documented 1.97 dynamic-tool API and was import verified there; deploy it with a runtime that includes PydanticAI.
