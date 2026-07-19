@@ -34,6 +34,7 @@
 
 ## Last 10 Changes
 
+- 2026-07-19: Added safe lightweight Markdown rendering for completed ARC Toolbar assistant bubbles (bold, lists, and line breaks), while keeping user and typing content plain text. Added agent chat-format rules that reserve structured dashboards for display JSON and corrected the display JSON example so runtime prompt interpolation succeeds.
 - 2026-07-18: Rewired ARC Toolbar chat to consume the PydanticAI SSE endpoint instead of calling DeepSeek and MCP tools directly. Added bounded in-memory multi-turn sessions, session reset, streamed typing/tool activity, and preserved structured toolbar display responses server-side.
 - 2026-07-18: Added a PydanticAI DeepSeek agent harness with true two-phase MCP tool loading, enriched schemas for all 28 tools, `/mcp/tools/load`, and `/agent/chat` SSE events for text, tool calls, tool results, and completion.
 - 2026-07-18: Corrected Google Sheets chart API payloads: BAR series now target `BOTTOM_AXIS`, PIE creation sends a single `ChartData` series, and PIE snapshots parse that singular structure.
@@ -44,7 +45,6 @@
 - 2026-07-17: Made every Demo Bench MCP database connection set `search_path` to `arcillis` explicitly, removing the fragile URL options fallback that broke psycopg2 URI parsing on macOS.
 - 2026-07-17: Added gspread-backed Google Sheets MCP tools for writing formatted headers, live color-coded extraction rows, arbitrary cells, and reads. The macOS launcher now supplies the service-account credential path.
 - 2026-07-17: Added Mac-runnable MCP startup and four live Excel tools: cell read/write, basic formatting, and color-coded extraction row output. The MCP database URL is now configurable so macOS connects to PC Postgres through Tailscale.
-- 2026-07-16: Added ARC Toolbar's structured component display system. The Nokia screen now defaults to a persisted dashboard with seven DOM-rendered primitives, responsive rows, an in-place chat fallback, intent buttons, loading overlay, animated preset sizing, and runtime admin controls for display configuration.
 
 ## Known Issues
 

@@ -50,6 +50,54 @@ let state = {
 const appWindow = getCurrentWindow();
 const $ = (selector) => document.querySelector(selector);
 
+function renderChatMarkdown(text) {
+  const escaped = String(text ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+  const renderInline = (line) => {
+    const blockquote = line.replace(/^\s*&gt;\s?/, "");
+    const heading = blockquote.match(/^\s*#{1,6}\s*(.*)$/);
+    const content = (heading ? heading[1] : blockquote)
+      .replace(/`/g, "")
+      .replace(/\[([^\]]*)\]\([^)]*\)/g, "$1")
+      .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
+    return heading ? `<strong>${content}</strong>` : content;
+  };
+  const lines = escaped.split("\n");
+  const output = [];
+
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index];
+    if (/^\s*---+\s*$/.test(line)) continue;
+
+    const unordered = line.match(/^\s*[-*]\s+(.*)$/);
+    const ordered = line.match(/^\s*\d+\.\s+(.*)$/);
+    if (unordered || ordered) {
+      const tag = unordered ? "ul" : "ol";
+      const items = [];
+      while (index < lines.length) {
+        const item = tag === "ul"
+          ? lines[index].match(/^\s*[-*]\s+(.*)$/)
+          : lines[index].match(/^\s*\d+\.\s+(.*)$/);
+        if (!item) break;
+        items.push(`<li>${renderInline(item[1])}</li>`);
+        index += 1;
+      }
+      output.push(`<${tag}>${items.join("")}</${tag}>`);
+      if (index < lines.length && !/^\s*$/.test(lines[index]) && !/^\s*---+\s*$/.test(lines[index])) output.push("<br>");
+      index -= 1;
+      continue;
+    }
+
+    output.push(renderInline(line));
+    if (index < lines.length - 1) output.push("<br>");
+  }
+
+  return output.join("");
+}
+
 function saveState() {
   localStorage.setItem(STORAGE_KEY, JSON.stringify({ serverUrl: state.serverUrl, appName: state.appName, layout: state.layout, config: state.config, display: state.config.persistDisplay ? state.display : null, displayStack: state.config.persistDisplay ? state.displayStack : [] }));
 }
@@ -93,7 +141,8 @@ function appendChatMessages(container) {
   state.chatMessages.forEach((message) => {
     const bubble = document.createElement("div");
     bubble.className = `chat-bubble ${message.role}${message.typing ? " typing" : ""}`;
-    bubble.textContent = message.text;
+    if (message.role === "assistant" && !message.typing) bubble.innerHTML = renderChatMarkdown(message.text);
+    else bubble.textContent = message.text;
     container.append(bubble);
   });
 }
