@@ -15,7 +15,7 @@
 ## File Map
 
 - `arc-toolbar/index.html`: Vite entry point — root HTML shell with layout containers and Tabler Icons CDN.
-- `arc-toolbar/src/main.js`: Toolbar state and layout engine, server health check, SSE agent chat consumer with ephemeral session IDs, structured display response parsing, display persistence, window sizing, admin settings, reset shortcut, and Tauri window controls.
+- `arc-toolbar/src/main.js`: Toolbar state and layout engine, server health check, SSE agent chat consumer with ephemeral session IDs, tool-call display updates, display persistence, window sizing, admin settings, reset shortcut, and Tauri window controls.
 - `arc-toolbar/src/components.js`: DOM-only renderer for the number, text, table, status, progress, button, and divider display primitives.
 - `arc-toolbar/src-tauri/capabilities/default.json`: Tauri v2 permissions for drag, minimize, close, resizing, and always-on-top operations.
 - `arc-toolbar/src/style.css`: Dark theme with CSS custom properties, three layout modes, custom titlebar, and admin overlay styles.
@@ -34,6 +34,7 @@
 
 ## Last 10 Changes
 
+- 2026-07-19: Replaced fragile free-text display JSON parsing with an `update_display` PydanticAI tool. The toolbar now renders validated display payloads directly from `tool_call` SSE events, while agent chat responses remain conversational text.
 - 2026-07-19: Added safe lightweight Markdown rendering for completed ARC Toolbar assistant bubbles (bold, lists, and line breaks), while keeping user and typing content plain text. Added agent chat-format rules that reserve structured dashboards for display JSON and corrected the display JSON example so runtime prompt interpolation succeeds.
 - 2026-07-18: Rewired ARC Toolbar chat to consume the PydanticAI SSE endpoint instead of calling DeepSeek and MCP tools directly. Added bounded in-memory multi-turn sessions, session reset, streamed typing/tool activity, and preserved structured toolbar display responses server-side.
 - 2026-07-18: Added a PydanticAI DeepSeek agent harness with true two-phase MCP tool loading, enriched schemas for all 28 tools, `/mcp/tools/load`, and `/agent/chat` SSE events for text, tool calls, tool results, and completion.
@@ -43,8 +44,6 @@
 - 2026-07-17: Fixed `sheets_snapshot` to detect and analyze only the Google Sheet's populated row and column range, while retaining the full grid dimensions for context.
 - 2026-07-17: Added `sheets_snapshot` tool that returns a compressed structural summary of a Google Sheet — dimensions, frozen panes, merges, headers, column types/fill rates, sample rows, auto-detected issues, and optional formatting info. Registered in the Demo Bench MCP server under the `document_extractor` demo.
 - 2026-07-17: Made every Demo Bench MCP database connection set `search_path` to `arcillis` explicitly, removing the fragile URL options fallback that broke psycopg2 URI parsing on macOS.
-- 2026-07-17: Added gspread-backed Google Sheets MCP tools for writing formatted headers, live color-coded extraction rows, arbitrary cells, and reads. The macOS launcher now supplies the service-account credential path.
-- 2026-07-17: Added Mac-runnable MCP startup and four live Excel tools: cell read/write, basic formatting, and color-coded extraction row output. The MCP database URL is now configurable so macOS connects to PC Postgres through Tailscale.
 
 ## Known Issues
 

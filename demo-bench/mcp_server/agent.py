@@ -106,7 +106,11 @@ OPERATING RULES
 8. If the user's request is ambiguous, ask one clarifying question. Do not guess at critical parameters like which spreadsheet or which data range.
 9. When creating formatted output, apply professional styling: bold headers with a dark background and white text, consistent number formatting, conditional coloring on accuracy scores.
 10. Verify your work. After writing data, snapshot or read back to confirm. After creating a chart, snapshot it.
-11. When a dashboard would make the response clearer, return exactly one JSON object without markdown. Its shape is {{"text":"brief chat summary","display":{{"size":{{"width":"compact|standard|wide|full","height":"short|standard|tall|full"}},"rows":[{{"components":[...]}}]}}}}. The display component types are number(value,label,color), text(value,label), table(headers,rows), status(label,value,color), progress(label,value,max,color), button(label,intent,color), and divider. Components may set width to full, half, or third. Use semantic colors success, warning, danger, neutral, info, or a hex color. Return plain text when a visual display is not useful.
+DISPLAY RULES:
+- When you want to show structured data (dashboards, stats, tables, charts), call the update_display tool.
+- Do NOT embed display JSON in your chat text. Chat text is purely conversational.
+- You can call update_display AND write a chat message in the same response. The chat text goes in the bubble, and the display renders in the panel.
+- Call update_display proactively when you have interesting data to visualize, not just when asked.
 
 CHAT FORMATTING RULES:
 - Chat responses are short and conversational. You are talking in a narrow toolbar window.
@@ -114,9 +118,8 @@ CHAT FORMATTING RULES:
 - Use short bulleted lists (- item) when listing 2-5 items.
 - Use numbered lists (1. item) for sequential steps.
 - Do NOT use ## headers, markdown tables, code blocks, horizontal rules, or blockquotes in chat.
-- Do NOT try to build dashboards or data tables in chat text - use the display JSON system for any structured data.
+- Do NOT build dashboards or data tables in chat text. Use update_display for structured data.
 - Keep chat responses under 4-5 sentences unless the user asked a detailed question.
-- If you have both a conversational answer AND structured data to show, put the conversational part in your text response and the structured data in a display JSON block.
 """
 
 
@@ -387,6 +390,33 @@ agent = Agent[AgentContext, str](
     tools=[load_tools],
     tool_timeout=60,
 )
+
+
+@agent.tool
+async def update_display(ctx: RunContext[AgentContext], display: dict) -> str:
+    """Update the toolbar's visual display panel with structured data.
+
+    Call this tool whenever you want to show dashboards, stats, tables, or any
+    structured visual content. The display renders in the toolbar's component panel,
+    separate from the chat conversation.
+
+    The display object must contain:
+    - size: {width: "compact"|"standard"|"wide"|"full", height: "short"|"standard"|"tall"|"full"}
+    - rows: array of row objects, each with a "components" array
+
+    Component types:
+    - number: {type: "number", value: 123, label: "Total", color: "info"|"success"|"warning"|"danger"}
+    - text: {type: "text", value: "description text", color: "info"|"success"|"warning"|"danger"}
+    - table: {type: "table", headers: ["Col1", "Col2"], rows: [["val1", "val2"]]}
+    - status: {type: "status", label: "System", value: "online"|"offline"|"warning", color: "success"|"danger"|"warning"}
+    - progress: {type: "progress", value: 85.5, label: "Accuracy", color: "info"|"success"|"warning"|"danger"}
+    - button: {type: "button", label: "Click me", intent: "action_name", color: "info"|"success"|"warning"|"danger"}
+    - divider: {type: "divider"}
+
+    Components can have width: "full" (default), "half", or "third" to sit side by
+    side in a row.
+    """
+    return "Display updated successfully."
 
 
 def run_agent_events(

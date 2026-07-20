@@ -187,14 +187,6 @@ async function checkServerHealth() {
   }
 }
 
-function parseAgentResponse(response) {
-  const raw = response.trim().replace(/^```json\s*|\s*```$/g, "");
-  try {
-    const parsed = JSON.parse(raw);
-    if (parsed?.display?.rows || parsed?.rows) return { text: parsed.text || "Display updated.", display: parsed.display || parsed };
-  } catch { /* Plain text remains a chat response. */ }
-  return { text: response, display: null };
-}
 function validateDisplay(display) { return display && Array.isArray(display.rows); }
 function updateStreamingBubble(text) {
   const typingIndex = state.chatMessages.findIndex((message) => message.typing);
@@ -244,7 +236,15 @@ async function runAgentStream(message) {
           updateStreamingBubble(fullText);
           break;
         case "tool_call":
-          addStatus("info", `Running ${event.name}...`);
+          if (event.name === "update_display") {
+            const displayData = event.args?.display || event.args;
+            if (validateDisplay(displayData)) {
+              await updateDisplay(displayData);
+              addStatus("success", "Display updated");
+            }
+          } else {
+            addStatus("info", `Running ${event.name}...`);
+          }
           break;
         case "tool_result":
           addStatus("success", `${event.name} complete`);
@@ -267,10 +267,9 @@ async function handleChatSend(text, inputEl) {
   if (inputEl) inputEl.value = "";
   rerenderChats();
   try {
-    const result = parseAgentResponse(await runAgentStream(message));
+    const fullText = await runAgentStream(message);
     state.chatMessages = state.chatMessages.filter((entry) => !entry.typing);
-    state.chatMessages.push({ role: "assistant", text: result.text });
-    if (validateDisplay(result.display)) await updateDisplay(result.display);
+    state.chatMessages.push({ role: "assistant", text: fullText });
     addStatus("success", "Response ready");
   } catch (error) {
     state.chatMessages = state.chatMessages.filter((entry) => !entry.typing);
