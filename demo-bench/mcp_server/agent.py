@@ -5,7 +5,7 @@ from __future__ import annotations
 import copy
 import json
 import os
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any
 
 import httpx
@@ -20,11 +20,45 @@ DEFAULT_SPREADSHEET_ID = os.environ.get("ARCILLIS_SPREADSHEET_ID", "test-sheet-i
 DEFAULT_DEMO_NAME = "document_extractor"
 
 
+DEMO_SCHEMA_HINTS = {
+    "document_extractor": """
+Available database tables (PostgreSQL, schema: arcillis):
+
+demo2_extraction:
+  - id (serial primary key)
+  - invoice_id (integer, FK to demo2_invoice.id)
+  - run_id (text - identifies the extraction run, e.g. 'full-test-run', 'mychen76-test-run')
+  - overall_accuracy (float - 0 to 100, percentage)
+  - field_results (jsonb - per-field extraction results with accuracy scores)
+  - created_at (timestamp)
+
+demo2_invoice:
+  - id (serial primary key)
+  - filename (text)
+  - split (text - 'train' or 'test')
+  - extracted_data (jsonb - raw extraction output)
+  - source_path (text)
+  - created_at (timestamp)
+  - dataset_source (text - e.g. 'mychen76', 'donut')
+
+Common query patterns:
+  - Count/avg: SELECT COUNT(*), AVG(overall_accuracy) FROM demo2_extraction
+  - By run: GROUP BY run_id
+  - By dataset: JOIN demo2_invoice ON demo2_extraction.invoice_id = demo2_invoice.id, GROUP BY dataset_source
+  - Grade breakdown: CASE WHEN overall_accuracy >= 95 THEN 'green' WHEN >= 80 THEN 'yellow' ELSE 'red'
+""".strip(),
+}
+
+
 SYSTEM_PROMPT_TEMPLATE = """You are an AI operations specialist deployed by Arcillis. You are embedded in a client's desktop toolbar and your job is to process documents, manage spreadsheets, analyze extraction results, and deliver formatted output.
 
 Client: {client_name}
 Active Spreadsheet: {spreadsheet_id}
 Active Demo: {demo_name}
+
+DATABASE SCHEMA:
+{schema_hint}
+Use this schema for direct data queries; do not run exploratory schema queries for these tables.
 
 AVAILABLE TOOLS
 
@@ -96,7 +130,7 @@ sheets_write_extraction_row - Write one extraction result as a color-coded row. 
 
 OPERATING RULES
 
-1. Call load_tools before using any tool. You cannot call a tool without loading its full schema first.
+1. Call load_tools only when the needed tool is not already available. Tools loaded earlier in this session remain available.
 2. Always call sheets_snapshot before modifying any Google Sheet. Understand the layout before you act.
 3. Never perform arithmetic yourself. Use sheets_calculate for any computation - it is deterministic.
 4. When a task requires multiple tools, plan the full sequence before executing. Write data before formatting it. Format before charting. Snapshot after major changes to verify.
@@ -125,12 +159,12 @@ CHAT FORMATTING RULES:
 
 @dataclass
 class AgentContext:
-    """Per-run context that keeps dynamically loaded tools isolated per request."""
+    """Per-run context retaining dynamically loaded schemas for one chat session."""
 
     client_name: str = DEFAULT_CLIENT_NAME
     spreadsheet_id: str = DEFAULT_SPREADSHEET_ID
     demo_name: str = DEFAULT_DEMO_NAME
-    loaded_tools: set[str] = field(default_factory=set)
+    loaded_tools: dict[str, dict[str, Any]] | None = None
 
 
 def _object(properties: dict[str, Any], required: list[str] | None = None) -> dict[str, Any]:
@@ -367,20 +401,34 @@ MCP_TOOLS = {name: make_mcp_tool(spec) for name, spec in MCP_TOOLS_BY_NAME.items
 
 async def load_tools(ctx: RunContext[AgentContext], tools: list[str]) -> str:
     """Load full schemas for requested MCP tools before using them."""
+    requested = list(dict.fromkeys(tools))
+    cached_tools = ctx.deps.loaded_tools or {}
+    missing_tools = [name for name in requested if name not in cached_tools]
+    if not missing_tools:
+        return "Tools already loaded: " + ", ".join(requested)
+
     try:
-        definitions = get_tool_definitions(tools)
+        definitions = get_tool_definitions(missing_tools)
     except ValueError as error:
         return json.dumps({"error": str(error), "available_tools": list(MCP_TOOLS_BY_NAME)})
 
-    ctx.deps.loaded_tools.update(definition["name"] for definition in definitions)
+    ctx.deps.loaded_tools = {
+        **cached_tools,
+        **{definition["name"]: definition for definition in definitions},
+    }
     return json.dumps({"loaded_tools": definitions})
 
 
 def _runtime_instructions(ctx: RunContext[AgentContext]) -> str:
+    schema_hint = DEMO_SCHEMA_HINTS.get(
+        ctx.deps.demo_name,
+        "No schema information available. Use exploratory queries.",
+    )
     return SYSTEM_PROMPT_TEMPLATE.format(
         client_name=ctx.deps.client_name,
         spreadsheet_id=ctx.deps.spreadsheet_id,
         demo_name=ctx.deps.demo_name,
+        schema_hint=schema_hint,
     )
 
 
@@ -437,7 +485,8 @@ def run_agent_events(
 @agent.toolset
 def loaded_mcp_toolset(ctx: RunContext[AgentContext]) -> FunctionToolset[AgentContext]:
     """Expose only tools selected by load_tools on the next model turn."""
-    tools = [MCP_TOOLS[spec["name"]] for spec in MCP_TOOL_SPECS if spec["name"] in ctx.deps.loaded_tools]
+    loaded_tools = ctx.deps.loaded_tools or {}
+    tools = [MCP_TOOLS[spec["name"]] for spec in MCP_TOOL_SPECS if spec["name"] in loaded_tools]
     return FunctionToolset(tools=tools)
 
 

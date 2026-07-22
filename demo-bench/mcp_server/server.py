@@ -174,21 +174,30 @@ MAX_MESSAGES_PER_SESSION = 50
 sessions: OrderedDict[str, dict[str, Any]] = OrderedDict()
 
 
-def get_session(session_id: str) -> list[Any]:
-    """Get message history for a session, or an empty list for a new session."""
+def get_session(session_id: str) -> dict[str, Any]:
+    """Get message history and cached tool schemas for a session."""
     entry = sessions.get(session_id)
     if entry:
         entry["last_access"] = time.time()
         sessions.move_to_end(session_id)
-        return entry["messages"]
-    return []
+        return {"messages": entry["messages"], "loaded_tools": entry.get("loaded_tools")}
+    return {"messages": [], "loaded_tools": None}
 
 
-def save_session(session_id: str, messages: list[Any]) -> None:
-    """Store an updated history and enforce the bounded in-memory session cache."""
+def save_session(
+    session_id: str,
+    messages: list[Any],
+    loaded_tools: dict[str, dict[str, Any]] | None = None,
+) -> None:
+    """Store updated session history and schemas in the bounded in-memory cache."""
     if len(messages) > MAX_MESSAGES_PER_SESSION:
         messages = messages[-MAX_MESSAGES_PER_SESSION:]
-    sessions[session_id] = {"messages": messages, "last_access": time.time()}
+    existing = sessions.get(session_id, {})
+    sessions[session_id] = {
+        "messages": messages,
+        "loaded_tools": loaded_tools if loaded_tools is not None else existing.get("loaded_tools"),
+        "last_access": time.time(),
+    }
     sessions.move_to_end(session_id)
     while len(sessions) > MAX_SESSIONS:
         sessions.popitem(last=False)
@@ -281,12 +290,14 @@ async def agent_chat(request: AgentChatRequest) -> StreamingResponse:
     except RuntimeError as error:
         raise HTTPException(status_code=503, detail=str(error)) from error
 
+    session = get_session(request.session_id)
     context = AgentContext(
         client_name=request.client_name,
         spreadsheet_id=request.spreadsheet_id,
         demo_name=request.demo,
+        loaded_tools=session["loaded_tools"],
     )
-    history = get_session(request.session_id)
+    history = session["messages"]
 
     async def event_stream():
         result = None
@@ -305,7 +316,7 @@ async def agent_chat(request: AgentChatRequest) -> StreamingResponse:
                     if payload is not None:
                         yield f"data: {json.dumps(payload, default=str)}\n\n"
             if result is not None:
-                save_session(request.session_id, result.all_messages())
+                save_session(request.session_id, result.all_messages(), context.loaded_tools)
         except Exception as error:
             yield f"data: {json.dumps({'type': 'error', 'content': str(error)})}\n\n"
         yield f"data: {json.dumps({'type': 'done'})}\n\n"

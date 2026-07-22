@@ -26,7 +26,7 @@
 - `demo-bench/widgets/demo_selector_window.py`: Dark landing dialog and clickable Document Extractor demo card.
 - `demo-bench/plugins/document_extractor.py`: Registers and lays out the Document Extractor intake, viewer, batch status, results table, and export docks.
 - `demo-bench/mcp_server/`: FastAPI server on port 8098 with demo-scoped MCP-style tool discovery/calls, guarded read access, result summaries, CSV/Excel exports, live xlwings workbook tools, Gmail inbox scanning, staged vision extraction, and a streaming PydanticAI agent endpoint with bounded in-memory multi-turn sessions. `start_mac.sh` connects to the PC Postgres instance through Tailscale.
-- `demo-bench/mcp_server/agent.py`: PydanticAI DeepSeek harness with per-chat context, a tool catalog prompt, schema-backed local MCP wrappers, two-phase `load_tools` discovery that exposes selected tools only on subsequent model turns, and a history-aware event-stream helper.
+- `demo-bench/mcp_server/agent.py`: PydanticAI DeepSeek harness with session-cached dynamic tool schemas, per-demo database schema hints, schema-backed local MCP wrappers, two-phase `load_tools` discovery, and a history-aware event-stream helper.
 - `demo-bench/widgets/chat_widget.py`: Floating assistant bubble that discovers Demo 2 tools, calls DeepSeek from worker threads, and emits local invoice-highlight requests.
 - `demo-bench/widgets/results_table_widget.py`: Loads extraction records, grades, selectable rows, and field-level comparisons from Postgres.
 - `demo-bench/widgets/export_widget.py`: Exports checked (or confirmed all) extraction records as CSV or formatted Excel.
@@ -34,6 +34,7 @@
 
 ## Last 10 Changes
 
+- 2026-07-22: Cached dynamically loaded MCP schemas with each agent session, supplied a Document Extractor database schema hint in runtime instructions, and verified PydanticAI 1.97.0 executes same-turn function calls in parallel by default.
 - 2026-07-19: Replaced fragile free-text display JSON parsing with an `update_display` PydanticAI tool. The toolbar now renders validated display payloads directly from `tool_call` SSE events, while agent chat responses remain conversational text.
 - 2026-07-19: Added safe lightweight Markdown rendering for completed ARC Toolbar assistant bubbles (bold, lists, and line breaks), while keeping user and typing content plain text. Added agent chat-format rules that reserve structured dashboards for display JSON and corrected the display JSON example so runtime prompt interpolation succeeds.
 - 2026-07-18: Rewired ARC Toolbar chat to consume the PydanticAI SSE endpoint instead of calling DeepSeek and MCP tools directly. Added bounded in-memory multi-turn sessions, session reset, streamed typing/tool activity, and preserved structured toolbar display responses server-side.
@@ -43,7 +44,6 @@
 - 2026-07-17: Added nine general-purpose Google Sheets MCP tools for formatting, formulas, row append/clear/management, merging, find, conditional formatting, and data validation. Added a live service-account smoke-test script and registered every tool under `document_extractor`.
 - 2026-07-17: Fixed `sheets_snapshot` to detect and analyze only the Google Sheet's populated row and column range, while retaining the full grid dimensions for context.
 - 2026-07-17: Added `sheets_snapshot` tool that returns a compressed structural summary of a Google Sheet — dimensions, frozen panes, merges, headers, column types/fill rates, sample rows, auto-detected issues, and optional formatting info. Registered in the Demo Bench MCP server under the `document_extractor` demo.
-- 2026-07-17: Made every Demo Bench MCP database connection set `search_path` to `arcillis` explicitly, removing the fragile URL options fallback that broke psycopg2 URI parsing on macOS.
 
 ## Known Issues
 
