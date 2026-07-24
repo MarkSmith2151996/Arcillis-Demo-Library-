@@ -34,6 +34,7 @@
 
 ## Last 10 Changes
 
+- 2026-07-24: Baked in the Mac-local stability fixes: FastAPI CORS middleware, PydanticAI 2.13-compatible agent imports and prompt replacement, Vite `/agent` and `/mcp` proxying, resilient display rendering, and a valid Tauri toolbar icon.
 - 2026-07-22: Cached dynamically loaded MCP schemas with each agent session, supplied a Document Extractor database schema hint in runtime instructions, and verified PydanticAI 1.97.0 executes same-turn function calls in parallel by default.
 - 2026-07-19: Replaced fragile free-text display JSON parsing with an `update_display` PydanticAI tool. The toolbar now renders validated display payloads directly from `tool_call` SSE events, while agent chat responses remain conversational text.
 - 2026-07-19: Added safe lightweight Markdown rendering for completed ARC Toolbar assistant bubbles (bold, lists, and line breaks), while keeping user and typing content plain text. Added agent chat-format rules that reserve structured dashboards for display JSON and corrected the display JSON example so runtime prompt interpolation succeeds.
@@ -43,7 +44,6 @@
 - 2026-07-17: Added `sheets_chart_create` and `sheets_chart_snapshot` MCP tools for embedded BAR, LINE, PIE, COLUMN, and AREA Google Sheets charts plus readable chart verification snapshots.
 - 2026-07-17: Added nine general-purpose Google Sheets MCP tools for formatting, formulas, row append/clear/management, merging, find, conditional formatting, and data validation. Added a live service-account smoke-test script and registered every tool under `document_extractor`.
 - 2026-07-17: Fixed `sheets_snapshot` to detect and analyze only the Google Sheet's populated row and column range, while retaining the full grid dimensions for context.
-- 2026-07-17: Added `sheets_snapshot` tool that returns a compressed structural summary of a Google Sheet — dimensions, frozen panes, merges, headers, column types/fill rates, sample rows, auto-detected issues, and optional formatting info. Registered in the Demo Bench MCP server under the `document_extractor` demo.
 
 ## Known Issues
 

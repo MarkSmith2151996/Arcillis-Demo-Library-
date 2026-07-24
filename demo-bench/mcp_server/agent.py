@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from typing import Any
 
 import httpx
-from pydantic_ai import Agent, AgentEventStream, FunctionToolset, RunContext, Tool
+from pydantic_ai import Agent, FunctionToolset, RunContext, Tool
 from pydantic_ai.models.openai import OpenAIChatModel
 from pydantic_ai.providers.deepseek import DeepSeekProvider
 
@@ -424,11 +424,12 @@ def _runtime_instructions(ctx: RunContext[AgentContext]) -> str:
         ctx.deps.demo_name,
         "No schema information available. Use exploratory queries.",
     )
-    return SYSTEM_PROMPT_TEMPLATE.format(
-        client_name=ctx.deps.client_name,
-        spreadsheet_id=ctx.deps.spreadsheet_id,
-        demo_name=ctx.deps.demo_name,
-        schema_hint=schema_hint,
+    return (
+        SYSTEM_PROMPT_TEMPLATE
+        .replace("{client_name}", ctx.deps.client_name)
+        .replace("{spreadsheet_id}", ctx.deps.spreadsheet_id)
+        .replace("{demo_name}", ctx.deps.demo_name)
+        .replace("{schema_hint}", schema_hint)
     )
 
 
@@ -472,7 +473,7 @@ def run_agent_events(
     context: AgentContext,
     model: OpenAIChatModel,
     message_history: list[Any] | None = None,
-) -> AgentEventStream[Any]:
+):
     """Start an event stream while preserving an optional prior conversation."""
     return agent.run_stream_events(
         message,

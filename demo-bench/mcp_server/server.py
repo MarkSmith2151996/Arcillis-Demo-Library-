@@ -13,6 +13,7 @@ import time
 from typing import Any, Callable
 
 from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from pydantic_ai import (
@@ -167,6 +168,13 @@ class AgentResetRequest(BaseModel):
 
 
 app = FastAPI(title="Demo Bench MCP Server")
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 MAX_SESSIONS = 100

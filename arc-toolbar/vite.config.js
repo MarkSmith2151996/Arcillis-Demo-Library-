@@ -5,6 +5,10 @@ export default defineConfig({
   server: {
     port: 1420,
     strictPort: true,
+    proxy: {
+      "/agent": { target: "http://localhost:8098", changeOrigin: true },
+      "/mcp": { target: "http://localhost:8098", changeOrigin: true },
+    },
   },
   envPrefix: ["VITE_", "TAURI_"],
   build: {

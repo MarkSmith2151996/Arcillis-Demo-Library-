@@ -35,7 +35,7 @@ function loadStored() {
 }
 const stored = loadStored();
 let state = {
-  serverUrl: stored.serverUrl || "http://localhost:8098",
+  serverUrl: "",
   appName: stored.appName || "ARC",
   layout: stored.layout || "nokia",
   config: { ...DEFAULT_CONFIG, ...stored.config, colors: { ...DEFAULT_CONFIG.colors, ...stored.config?.colors }, buttonLabels: { ...DEFAULT_CONFIG.buttonLabels, ...stored.config?.buttonLabels }, defaultSize: { ...DEFAULT_CONFIG.defaultSize, ...stored.config?.defaultSize } },
@@ -239,8 +239,15 @@ async function runAgentStream(message) {
           if (event.name === "update_display") {
             const displayData = event.args?.display || event.args;
             if (validateDisplay(displayData)) {
-              await updateDisplay(displayData);
-              addStatus("success", "Display updated");
+              try {
+                await updateDisplay(displayData);
+                addStatus("success", "Display updated");
+              } catch (displayErr) {
+                console.error("Display update failed:", displayErr);
+                addStatus("warning", "Display render failed: " + (displayErr?.message || String(displayErr)));
+              }
+            } else {
+              addStatus("warning", "Invalid display data received");
             }
           } else {
             addStatus("info", `Running ${event.name}...`);
@@ -292,7 +299,15 @@ async function resetSession() {
   rerenderChats();
   addStatus("success", "Session reset");
 }
-async function updateDisplay(display) { if (state.config.displayUpdates === "stack" && state.display) state.displayStack.push(state.display); state.display = display; saveState(); await applyDisplaySize(display.size); renderNokia(); }
+async function updateDisplay(display) {
+  if (state.config.displayUpdates === "stack" && state.display) state.displayStack.push(state.display);
+  state.display = display;
+  state.screenView = "display";
+  if (state.layout === "chat") state.layout = "nokia";
+  saveState();
+  await applyDisplaySize(display.size);
+  renderAll();
+}
 async function applyDisplaySize(size = state.config.defaultSize) { const width = SIZES[size?.width] || SIZES[state.config.defaultSize.width]; const height = SIZES[size?.height] || SIZES[state.config.defaultSize.height]; await animateWindowSize(width, height); }
 async function animateWindowSize(width, height) { const [current, scale] = await Promise.all([appWindow.innerSize(), appWindow.scaleFactor()]); const startWidth = current.width / scale; const startHeight = current.height / scale; const steps = 8; for (let step = 1; step <= steps; step += 1) { const progress = step / steps; await appWindow.setSize(new LogicalSize(Math.round(startWidth + (width - startWidth) * progress), Math.round(startHeight + (height - startHeight) * progress))); await new Promise((resolve) => setTimeout(resolve, 18)); } }
 async function showLayout(name) { document.querySelectorAll(".layout").forEach((el) => el.classList.add("hidden")); $(`#layout-${name}`).classList.remove("hidden"); if (name === "nokia" || name === "chat") await applyDisplaySize(name === "nokia" ? state.display.size : { width: "compact", height: "standard" }); else await animateWindowSize(280, 180); }
